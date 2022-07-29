@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+echo "^A^D to detach, ^A^\ to exit"
+echo
+echo -n "Press Enter when ready..."; read
+screen /dev/tty.usbmodem1461 115200
+reset

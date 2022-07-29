@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+BUILD_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Moon Clock/build"
+
+rsync -av "${BUILD_PATH}/" /Volumes/CIRCUITPY
