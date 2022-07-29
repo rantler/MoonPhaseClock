@@ -76,7 +76,7 @@ def hsl_to_rgb(h, s, l):
 # @param   {number}  color   The color value e.g. 0x336699
 # @param   {number}  value   The saturation value as a percentage e.g. 0.5
 # @return  {Array}           The RGB representation of the result
-def set_brightness(color, value):
+def adjust_brightness(color, value):
     r = (color & 0xFF0000) >> 16
     g = (color & 0xFF00) >> 8
     b = color & 0xFF

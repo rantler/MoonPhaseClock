@@ -37,11 +37,11 @@ BIT_DEPTH = 6           # Ideally 6, but can set lower if RAM is tight
 REFRESH_DELAY = 10      # Seconds to wait between screen updates. Should be 5 >= n <= 60
 GLOBAL_BRIGHTNESS = 0.5 # Text brightness value ranging between 0.0 - 1.0
 
-MOON_EVENT_COLOR = color.set_brightness(0xB8BFC9, GLOBAL_BRIGHTNESS) # (grey blue)
-MOON_PERCENT_COLOR = color.set_brightness(0x9B24F9, GLOBAL_BRIGHTNESS) # (purple)
-SUN_EVENT_COLOR = color.set_brightness(0xFBDE2C, GLOBAL_BRIGHTNESS) # (sun yellow)
-TIME_COLOR = color.set_brightness(0xA00000, GLOBAL_BRIGHTNESS) # (red)
-DATE_COLOR = color.set_brightness(0x46BBDF, GLOBAL_BRIGHTNESS) # (aqua)
+MOON_EVENT_COLOR = color.adjust_brightness(0xB8BFC9, GLOBAL_BRIGHTNESS) # (grey blue)
+MOON_PERCENT_COLOR = color.adjust_brightness(0x9B24F9, GLOBAL_BRIGHTNESS) # (purple)
+SUN_EVENT_COLOR = color.adjust_brightness(0xFBDE2C, GLOBAL_BRIGHTNESS) # (sun yellow)
+TIME_COLOR = color.adjust_brightness(0xA00000, GLOBAL_BRIGHTNESS) # (red)
+DATE_COLOR = color.adjust_brightness(0x46BBDF, GLOBAL_BRIGHTNESS) # (aqua)
 
 # The meteorological data for TODAY and TOMORROW is kept in the PERIOD array.
 PERIOD = [None, None]
