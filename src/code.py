@@ -26,7 +26,7 @@ try:
     from secrets import secrets
     print('Secrets loaded')
 except ImportError:
-    print("WiFi secrets could not be found! Please add them to '/secrets.py'")
+    print("Secrets could not be loaded! Please check that the file '/secrets.py' exists and is readable.")
     raise
 
 HOURS_BETWEEN_SYNC = 8  # Number of hours between syncs with time server
@@ -249,7 +249,9 @@ try:
     LONGITUDE = secrets['longitude']
     print('Lat/lon determined from secrets: ', LATITUDE, LONGITUDE)
 except KeyError:
-    LATITUDE, LONGITUDE = NETWORK.fetch_data('http://www.geoplugin.net/json.gp', json_path=[['geoplugin_latitude'], ['geoplugin_longitude']])
+    LATITUDE, LONGITUDE = NETWORK.fetch_data(
+        'http://www.geoplugin.net/json.gp', json_path=[['geoplugin_latitude'], ['geoplugin_longitude']]
+    )
     print('Lat/lon determined by IP geolocation: ', LATITUDE, LONGITUDE)
 
 # Try to read the timezone from the secrets. If not present, it will be set below using IP geolocation
