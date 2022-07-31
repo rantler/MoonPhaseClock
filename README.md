@@ -10,17 +10,39 @@ BDF fonts from the X.Org project. Startup 'splash' images should not be included
 splash images licensed from 123RF.com, wide splash images used with permission of artist Lew Lashmit
 (viergacht@gmail.com). Rawr!
 
-Additional features, documentation, and changes by Randy Anter (tantalusrur@gmail.com).
+-----
+Additional features, documentation, and other changes by Randy Anter (tantalusrur@gmail.com).
 
 * Support for portrait/landscape for event time format
 * Add support for moon/sun rise/set for today/tomorrow
-* Add support or sleep mode during certain hours
-* Add global-ish brightness control
+* Add support or sleep mode during certain hours of the night
+* Add global-ish brightness control (fake, but somewhat helpful)
 * Code simplification, formatting and readability improvements
 
 ## Initial setup
 
-The following properties in the `secrets.yml` file _must be_ set:
+### Installing the CircuitPython firmware
+
+Download the CircuitPython firmware here <https://circuitpython.org/board/matrixportal_m4/>. This build of the clock
+uses version `7.3.2` which can be found in the file named `adafruit-circuitpython-matrixportal_m4-en_US-7.3.2.uf2`. To
+load the firmware, connect the Matrix Portal M4 board to your computer via USB and double-press the reset button until
+the device mounts on your computer as a removable drive named `MATRIXBOOT`. Copy the `.uf2` file to this drive to
+install the firmware. Afterward, it should automaticllay remount itself as the removable drive named `CIRCUITPY`.
+
+### Installing the libraries
+
+In addition to the firmware, you'll also need to download the appropriate version of the shared libraries. This build of
+the clock uses version `7.x` of the libraries which can be found here
+<https://github.com/adafruit/Adafruit_CircuitPython_Bundle/releases/download/20220727/adafruit-circuitpython-bundle-7.x-mpy-20220727.zip>.
+There may be a newer version but check to make sure that it is compatible with version `7.3.2` of the firmware to ensure
+compatibility.
+
+The libraries contained in this archive will be used by the `bin/build` script when creating the `build` image to be
+loaded onto the board. Please modify this script as needed to set the correct `LIB_PATH` in the script.
+
+### Setup secrets for WiFi connectivity
+
+The following required properties in the `secrets.yml` file _must be_ set in order to function correctly:
 
 * `ssid` - A floating point value representing your location, i.e., 'MyWiFiNetwork'
 * `password` - A floating point value representing your location, i.e. 'WiFiPassword'
@@ -35,25 +57,32 @@ are not present in the `secrets.py` file, they will be looked up dynamically as 
 * `offset` - A string value representing the difference from GMT / UTC, i.e. '-08:00' in your timezone
 * `timezone` - A string value representing the english timezone name, i.e. 'America/Los_Angeles'
 
+### Using the build tools
+
+There are some simple scripts in the `bin` directory that can be used to create a `build` from the files in the `src`
+directory as well as a `deploy` script that copies the files from the `build` directory to the device using the `rsync`
+program. There is also a simple `shell` command that starts up a `screen` session to monitor the logs and interact with
+the Python REPL.
+
 ## Developer notes
 
 ### `EarthData` class
 
-Class holding lunar data for a given day (`00:00:00` to `23:59:59`). App uses two of these -- one for the current day, and
-one for the following day -- then some interpolations and such can be made.
+Class holding lunar data for a given day (`00:00:00` to `23:59:59`). App uses two of these -- one for the current day,
+and one for the following day -- then some interpolations and such can be made.
 
-Initialize EarthData object elements (see above) from a `time.struct_time`, hours to skip ahead (typically 0 or 24), and a
-UTC offset (as a string) and a query to the MET Norway Sunrise API and provides lunar data.
+Initialize EarthData object elements (see above) from a `time.struct_time`, hours to skip ahead (typically 0 or 24), and
+a UTC offset (as a string) and a query to the MET Norway Sunrise API which provides lunar data.
 
-Example URL:
-<https://api.met.no/weatherapi/sunrise/2.0/.json?lat=47.56&lon=-122.39&date=2020-11-28&offset=-08:00>
+Sample URLs:
 
-Documentation is here: <https://api.met.no/weatherapi/sunrise/2.0/documentation>
+* <https://api.met.no/weatherapi/sunrise/2.0/documentation>
+* <https://api.met.no/weatherapi/sunrise/2.0/.json?lat=47.56&lon=-122.39&date=2020-11-28&offset=-08:00>
 
 | Property | Description |
 | ---- | ---- |
-| `age` | Moon phase 'age' at midnight (start of period) expressed from 0.0 (new moon) through 0.5 (full moon) to 1.0 (next new moon).
-| `midnight` | Epoch time in seconds @ midnight (start of period).
+| `age` | Moon phase 'age' at midnight (start of period) from 0.0 (new moon) to 0.5 (full moon) to 1.0 (next new moon).
+| `midnight` | Epoch time in seconds at midnight (start of period).
 | `moonrise` | Epoch time of moon rise within this 24-hour period.
 | `moonset` | Epoch time of moon set within this 24-hour period.
 | `sunrise` | Epoch time of sun rise within this 24-hour period.
@@ -62,7 +91,7 @@ Documentation is here: <https://api.met.no/weatherapi/sunrise/2.0/documentation>
 ### `parse_time` method
 
 Given a string of the format `YYYY-MM-DDTHH:MM:SS.SS-HH:MM` and optional `DST` flag, convert to and return a
-`time.struct_time` since `strptime()` isn't available here. Callers can call `time.mktime()` on the result if epoch
+`time.struct_time` since `strptime()` isn't available here. Callers can invoke `time.mktime()` on the result if epoch
 seconds is needed instead. Time string is assumed local time. If seconds value includes a decimal
 fraction it's ignored.
 
@@ -85,7 +114,7 @@ CircuitPython.
 ### `display_event` method
 
 Used to format and display the different diurnal events such as moonrise, or sunset. The single-arrow glyphs represent
-today's event, while the double-arrow glyphs represent tomorrow's event.
+today's events, while the double-arrow glyphs represent tomorrow's events.
 
 ### Fonts
 
@@ -95,11 +124,10 @@ can't find the glyph you're looking for.
 The bounding box calculated by the `adafruit_display_text` module when a label is added to a `displayio.Group`, i.e. via
 the `append` method, is only calcated at that moment. If you want to know the bounding box of dynamically changing text,
 you'll need to reassign the label such that it contains the new text for which you'd like to know the bounding box. For
-example, what is done with the date positioning as shown below:
+example, what is done with the date positioning as shown below (i.e. `bounding_box[2]`):
 
 ```py
-CLOCK_FACE[CLOCK_MONTH] = adafruit_display_text.label.Label(SMALL_FONT,
-    color=color.set_brightness(DATE_COLOR, GLOBAL_BRIGHTNESS), text=str(NOW.tm_mon), y=TIME_Y + 10)
+CLOCK_FACE[CLOCK_MONTH] = Label(SMALL_FONT, color=DATE_COLOR, text=str(NOW.tm_mon), y=TIME_Y + 10)
 CLOCK_FACE[CLOCK_MONTH].x = CENTER_X - 2 - CLOCK_FACE[10].bounding_box[2]
 ```
 
@@ -115,10 +143,13 @@ convert splash-portrait.bmp -depth 8 -resize 64x32 temp.bmp; mv temp.bmp splash-
 
 ### Sleeping
 
-In order to reduce the brightness of the display at night, the sleeping images is extremely dark and may appear totally
-black on your display depending on your settings. The gamma level of the LED panel is extremely high, so even very dark
-colors will appear bright. You can change the hours during which the display sleeps with in the `settings.py`, or
-disable sleep mode entirely by setting the `sleep_hour` to a value higher than `24`.
+In order to reduce the brightness of the display at night, the sleeping image is extremely dark and may appear totally
+black on your computer display depending on your settings. The gamma level of the LED panel is extremely high, so even
+very dark colors can appear bright. You can change the hours during which the display sleeps with in the `settings.py`,
+or disable sleep mode entirely by setting the `sleep_hour` to a value higher than `24`.
+
+> Note: Fine adjustment of the global brightness of the LED panel is not possible without the use of some kind of PWM
+> library, which at the time of this writing does not exist.
 
 ### Memory limitations
 
