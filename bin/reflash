@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Firmware"
+
+echo -n "DOUBLE-CLICK RESET BUTTON. Press Enter when ready:"
+read
+echo
+echo "Erasing filesystem..."
+cp "${LIB_PATH}/Matrix_Portal_M4_Erase_Filesystem.uf2" /Volumes/MATRIXBOOT
+
+echo
+echo -n "DOUBLE-CLICK RESET BUTTON. Press Enter when ready:"
+read
+echo "Copying firmware..."
+
+cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-7.3.2.uf2" /Volumes/MATRIXBOOT/

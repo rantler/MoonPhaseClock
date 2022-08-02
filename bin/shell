@@ -2,5 +2,6 @@
 echo "^A^D to detach, ^A^\ to exit"
 echo
 echo -n "Press Enter when ready..."; read
-screen /dev/tty.usbmodem1461 115200
+DEVICE="/dev/`TERM=none ls /dev/|grep tty.usbmodem`"
+screen ${DEVICE} 115200
 reset

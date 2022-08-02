@@ -24,10 +24,9 @@ Additional features, documentation, and other changes by Randy Anter (tantalusru
 ### Installing the CircuitPython firmware
 
 Download the CircuitPython firmware here <https://circuitpython.org/board/matrixportal_m4/>. This build of the clock
-uses version `7.3.2` which can be found in the file named `adafruit-circuitpython-matrixportal_m4-en_US-7.3.2.uf2`. To
-load the firmware, connect the Matrix Portal M4 board to your computer via USB and double-press the reset button until
-the device mounts on your computer as a removable drive named `MATRIXBOOT`. Copy the `.uf2` file to this drive to
-install the firmware. Afterward, it should automaticllay remount itself as the removable drive named `CIRCUITPY`.
+uses version `7.3.2` which can be found in the file named `adafruit-circuitpython-matrixportal_m4-en_US-7.3.2.uf2`.
+
+Once downloaded, the `bin/reflash` script can be used to erase the filesystem and upload the firmware.
 
 ### Installing the libraries
 
