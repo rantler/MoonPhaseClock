@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.0.13'
+VERSION = '1.6.1.1'
 print('VERSION {0} ({1:,} RAM)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -16,6 +16,7 @@ from adafruit_bitmap_font import bitmap_font
 from adafruit_display_text.label import Label
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
+from digitalio import DigitalInOut, Pull
 from rtc import RTC
 
 import color
@@ -52,6 +53,24 @@ TODAY_RISE = '\u2191' # ↑
 TODAY_SET = '\u2193' # ↓
 TOMORROW_RISE = '\u219F' # ↟
 TOMORROW_SET = '\u21A1' # ↡
+
+pin_down = DigitalInOut(board.BUTTON_DOWN)
+pin_down.switch_to_input(pull=Pull.UP) # Pull.DOWN doesn't fucking work!
+pin_up = DigitalInOut(board.BUTTON_UP)
+pin_up.switch_to_input(pull=Pull.UP)
+
+ASLEEP = False
+
+def check_buttons():
+    global ASLEEP # Are you fucking kidding me? Python is teh sux0rz! 😂
+    if not pin_down.value: # negating to indicate button pressed
+        DISPLAY.show(SLEEPING)
+        ASLEEP = True
+        DISPLAY.refresh()
+    if not pin_up.value:
+        DISPLAY.show(CLOCK_FACE)
+        ASLEEP = False
+        DISPLAY.refresh()
 
 def parse_time(timestring, dst=-1):
     date_time = timestring.split('T')
@@ -287,9 +306,19 @@ CURRENT_DIURNAL_EVENT = 8
 while True:
     try:
         gc.collect()
-        NOW = time.time()
+
+        if not (secrets['wake_hour'] < time.localtime().tm_hour < secrets['sleep_hour']):
+            DISPLAY.show(SLEEPING)
+
+        wake_time = time.time() + REFRESH_DELAY
+        while(time.time() < wake_time):
+            check_buttons()
+
+        if ASLEEP:
+            continue
 
         # Periodically sync with time server since on-board clock is inaccurate
+        NOW = time.time()
         if NOW - LAST_SYNC > HOURS_BETWEEN_SYNC * SECONDS_PER_HOUR:
             print('Syncing with time server')
 
@@ -412,28 +441,19 @@ while True:
             display_event('Moonset tomorrow', PERIOD[TOMORROW].moonset, TOMORROW_SET)
             CURRENT_DIURNAL_EVENT = 8
 
-        NOW = time.localtime()
-        STRING = hh_mm(NOW)
+        STRING = hh_mm(LOCAL_TIME)
         CLOCK_FACE[CLOCK_TIME].text = STRING
         CLOCK_FACE[CLOCK_TIME].x = CENTER_X - CLOCK_FACE[CLOCK_TIME].bounding_box[2] // 2
         CLOCK_FACE[CLOCK_TIME].y = TIME_Y
 
-        CLOCK_FACE[CLOCK_MONTH] = Label(SMALL_FONT, color=DATE_COLOR, text=str(NOW.tm_mon), y=TIME_Y + 10)
+        CLOCK_FACE[CLOCK_MONTH] = Label(SMALL_FONT, color=DATE_COLOR, text=str(LOCAL_TIME.tm_mon), y=TIME_Y + 10)
         CLOCK_FACE[CLOCK_MONTH].x = CENTER_X - 1 - CLOCK_FACE[CLOCK_MONTH].bounding_box[2]
         CLOCK_FACE[CLOCK_SLASH].text = '/'
         CLOCK_FACE[CLOCK_SLASH].x = CENTER_X
         CLOCK_FACE[CLOCK_SLASH].y = TIME_Y + 10
-        CLOCK_FACE[CLOCK_DAY].text = str(NOW.tm_mday)
+        CLOCK_FACE[CLOCK_DAY].text = str(LOCAL_TIME.tm_mday)
         CLOCK_FACE[CLOCK_DAY].x = CENTER_X + 4
         CLOCK_FACE[CLOCK_DAY].y = TIME_Y + 10
-
-        if secrets['wake_hour'] < NOW.tm_hour < secrets['sleep_hour']:
-            DISPLAY.show(CLOCK_FACE)
-        else:
-            DISPLAY.show(SLEEPING)
-
         DISPLAY.refresh()
-        time.sleep(REFRESH_DELAY)
-
     except Exception as e:
         log_exception_and_restart('Unexpected exception: {0}'.format(e))

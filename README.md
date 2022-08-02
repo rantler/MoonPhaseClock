@@ -6,9 +6,11 @@ Requires WiFi internet access. Uses IP geolocation if timezone and/or lat/lon no
 Written by Phil 'PaintYourDragon' Burgess for Adafruit Industries. MIT license, all text above must be included in any
 redistribution.
 
-BDF fonts from the X.Org project. Startup 'splash' images should not be included in derivative projects, thanks. Tall
-splash images licensed from 123RF.com, wide splash images used with permission of artist Lew Lashmit
-(viergacht@gmail.com). Rawr!
+## Supported buttons
+
+* `UP` button forces the clock to wake
+* `DOWN` button forces the clock to sleep
+* `RESET` button resets the board - double-click to prepare for loading new UF2 firmware
 
 -----
 Additional features, documentation, and other changes by Randy Anter (tantalusrur@gmail.com).
