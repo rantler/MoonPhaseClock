@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.1.1'
+VERSION = '1.6.1.5'
 print('VERSION {0} ({1:,} RAM)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -20,15 +20,10 @@ from digitalio import DigitalInOut, Pull
 from rtc import RTC
 
 import color
-
 print('Imports loaded')
 
-try:
-    from secrets import secrets
-    print('Secrets loaded')
-except ImportError:
-    print("Secrets could not be loaded! Please check that the file '/secrets.py' exists and is readable.")
-    raise
+from secrets import secrets
+print('Secrets loaded')
 
 HOURS_BETWEEN_SYNC = 8  # Number of hours between syncs with time server
 SECONDS_PER_HOUR = 3600 # Number of seconds in one hour = 60 * 60
@@ -49,9 +44,9 @@ PERIOD = [None, None]
 TODAY = 0
 TOMORROW = 1
 
-TODAY_RISE = '\u2191' # ↑
-TODAY_SET = '\u2193' # ↓
-TOMORROW_RISE = '\u219F' # ↟
+TODAY_RISE = '\u2191'   # ↑
+TODAY_SET = '\u2193'    # ↓
+TOMORROW_RISE = '\u219F'# ↟
 TOMORROW_SET = '\u21A1' # ↡
 
 pin_down = DigitalInOut(board.BUTTON_DOWN)
@@ -61,23 +56,30 @@ pin_up.switch_to_input(pull=Pull.UP)
 
 ASLEEP = False
 
-def check_buttons():
+def sleep():
     global ASLEEP # Are you fucking kidding me? Python is teh sux0rz! 😂
-    if not pin_down.value: # negating to indicate button pressed
-        DISPLAY.show(SLEEPING)
-        ASLEEP = True
-        DISPLAY.refresh()
+    DISPLAY.show(SLEEPING)
+    DISPLAY.refresh()
+    ASLEEP = True
+
+def wake():
+    global ASLEEP
+    DISPLAY.show(CLOCK_FACE)
+    DISPLAY.refresh()
+    ASLEEP = False
+
+def check_buttons():
+    if not pin_down.value: # negating to indicate button pressed because Pull.UP 😵
+        sleep()
     if not pin_up.value:
-        DISPLAY.show(CLOCK_FACE)
-        ASLEEP = False
-        DISPLAY.refresh()
+        wake()
 
 def parse_time(timestring, dst=-1):
     date_time = timestring.split('T')
     year_month_day = date_time[0].split('-')
     hour_minute_second = date_time[1].split('+')[0].split('-')[0].split(':')
 
-    return time.struct_time((
+    return time.struct_time(( # Note: Extra parenthesis are needed because struct_time() now takes a tuple
         int(year_month_day[0]),
         int(year_month_day[1]),
         int(year_month_day[2]),
@@ -295,7 +297,6 @@ try:
     print('Setting initial clock time. UTC offset: {0}'.format(UTC_OFFSET))
 except Exception as e:
     log_exception_and_restart('Error setting initial clock time: {0}'.format(e))
-    # print('Error setting initial clock time: {0}'.format(e))
     # supervisor.reload() # Reboot / restart
 
 LAST_SYNC = time.mktime(DATETIME)
@@ -306,15 +307,22 @@ CURRENT_DIURNAL_EVENT = 8
 while True:
     try:
         gc.collect()
+        LOCAL_TIME = time.localtime()
 
-        if not (secrets['wake_hour'] < time.localtime().tm_hour < secrets['sleep_hour']):
-            DISPLAY.show(SLEEPING)
+        if secrets['sleep_hour'] != None and secrets['wake_hour'] != None:
+            if LOCAL_TIME.tm_hour >= secrets['sleep_hour'] and LOCAL_TIME.tm_hour < secrets['wake_hour'] and not ASLEEP:
+                print("Current hour is {0} and sleep_hour is {1}. Going to sleep...".format(LOCAL_TIME.tm_hour, secrets['sleep_hour']))
+                sleep()
+            if LOCAL_TIME.tm_hour >= secrets['wake_hour'] and ASLEEP:
+                print("\nCurrent hour is {0} and wake_hour is {1}. Waking up...".format(LOCAL_TIME.tm_hour, secrets['wake_hour']))
+                wake()
 
-        wake_time = time.time() + REFRESH_DELAY
-        while(time.time() < wake_time):
+        refresh_time = time.time() + REFRESH_DELAY
+        while(time.time() < refresh_time):
             check_buttons()
 
         if ASLEEP:
+            print(".", end="")
             continue
 
         # Periodically sync with time server since on-board clock is inaccurate
@@ -399,9 +407,6 @@ while True:
         else:
             STRING = '{:.1f}%'.format(PERCENT + 0.05)
 
-        LOCAL_TIME = time.localtime()
-        print('Local time is {0} - VERSION {1} ({2:,} RAM)'.format(strftime(LOCAL_TIME), VERSION, gc.mem_free()))
-
         # Set PHASE_PERCENT first, use its size and position for painting the outlines below
         CLOCK_FACE[PHASE_PERCENT].text = STRING
         CLOCK_FACE[PHASE_PERCENT].x = 16 - CLOCK_FACE[PHASE_PERCENT].bounding_box[2] // 2 # Integer division
@@ -455,5 +460,6 @@ while True:
         CLOCK_FACE[CLOCK_DAY].x = CENTER_X + 4
         CLOCK_FACE[CLOCK_DAY].y = TIME_Y + 10
         DISPLAY.refresh()
+        print('Local time is {0} - VERSION {1} ({2:,} RAM)'.format(strftime(LOCAL_TIME), VERSION, gc.mem_free()))
     except Exception as e:
         log_exception_and_restart('Unexpected exception: {0}'.format(e))
