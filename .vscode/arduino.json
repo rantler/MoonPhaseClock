@@ -1,0 +1,5 @@
+{
+    "port": "/dev/tty.usbmodem1471",
+    "board": "adafruit:samd:adafruit_matrixportal_m4",
+    "configuration": "cache=on,speed=120,opt=small,maxqspi=50,usbstack=arduino,debug=off"
+}
