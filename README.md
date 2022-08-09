@@ -47,16 +47,18 @@ The following required properties in the `secrets.yml` file _must be_ set in ord
 
 * `ssid` - A floating point value representing your location, i.e., 'MyWiFiNetwork'
 * `password` - A floating point value representing your location, i.e. 'WiFiPassword'
-* `wake_hour` - An integer value representing the hour at which the clock should awake
-* `sleep_hour` - An integer value representing the hour at which the clock should sleep
 
 The following _optional_ properties can sometimes be helpful to set manually are shown below. If any of these properties
 are not present in the `secrets.py` file, they will be looked up dynamically as needed.
 
+* `sleep_hour` - An integer value representing the hour at which the clock should sleep<sup>*</sup>
+* `wake_hour` - An integer value representing the hour at which the clock should awake<sup>*</sup>
 * `latitude` - A floating point value representing your location, i.e. 47.57
 * `longitude` - A floating point value representing your location, i.e. -122.38
 * `offset` - A string value representing the difference from GMT / UTC, i.e. '-08:00' in your timezone
 * `timezone` - A string value representing the english timezone name, i.e. 'America/Los_Angeles'
+
+<sup>*</sup>_Both `sleep_hour` and `wake_hour` must be present if either one is present in order to take effect._
 
 ### Using the build tools
 
