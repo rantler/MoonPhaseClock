@@ -19,6 +19,10 @@ for lib in \
   neopixel.mpy
 do
   echo "Copying ${lib}"
+  if [ ! -r "${LIB_PATH}/${lib}" ]; then
+    echo "ERROR: Unable to copy: ${LIB_PATH}/${lib}"
+    exit 1
+  fi
   cp -pr "${LIB_PATH}/${lib}" build/lib
 done
 
