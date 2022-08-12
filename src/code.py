@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.1.5'
+VERSION = '1.6.2.2'
 print('VERSION {0} ({1:,} RAM)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -17,7 +17,24 @@ from adafruit_display_text.label import Label
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
 from digitalio import DigitalInOut, Pull
+from micropython import const
 from rtc import RTC
+
+import microcontroller
+
+# nvm[0] == user-induced sleep mode - (0) = awake, (1) = sleeping
+microcontroller.nvm[0:1] = bytes([0])
+
+import busio
+from adafruit_esp32spi import adafruit_esp32spi
+
+# If you are using a board with pre-defined ESP32 Pins:
+esp32_cs = DigitalInOut(board.ESP_CS)
+esp32_ready = DigitalInOut(board.ESP_BUSY)
+esp32_reset = DigitalInOut(board.ESP_RESET)
+
+spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 
 import color
 print('Imports loaded')
@@ -56,23 +73,38 @@ pin_up.switch_to_input(pull=Pull.UP)
 
 ASLEEP = False
 
-def sleep():
-    global ASLEEP # Are you fucking kidding me? Python is teh sux0rz! 😂
-    DISPLAY.show(SLEEPING)
-    DISPLAY.refresh()
-    ASLEEP = True
+def forced_asleep():
+    return microcontroller.nvm[0] == 1
 
-def wake():
+# When forced asleep, the clock will remain sleeping until forced awake
+def sleep(forced = False):
+    global ASLEEP # Are you fucking kidding me? Python is teh sux0rz! 😂
+    if not ASLEEP:
+        DISPLAY.show(SLEEPING)
+        DISPLAY.refresh()
+        ASLEEP = True
+    if forced:
+        microcontroller.nvm[0:1] = bytes([1])
+
+# When forced awake, will resume sleeping at the scheduled time, if configured to do so
+def wake(forced = False):
     global ASLEEP
-    DISPLAY.show(CLOCK_FACE)
-    DISPLAY.refresh()
-    ASLEEP = False
+    if ASLEEP:
+        DISPLAY.show(CLOCK_FACE)
+        DISPLAY.refresh()
+        ASLEEP = False
+    if forced:
+        microcontroller.nvm[0:1] = bytes([0])
 
 def check_buttons():
     if not pin_down.value: # negating to indicate button pressed because Pull.UP 😵
-        sleep()
+        while not pin_down.value:
+            pass
+        sleep(forced = True)
     if not pin_up.value:
-        wake()
+        while not pin_up.value:
+            pass
+        wake(forced = True)
 
 def parse_time(timestring, dst=-1):
     date_time = timestring.split('T')
@@ -258,10 +290,13 @@ CLOCK_FACE.append(Label(SMALL_FONT, color=DATE_COLOR, text='/', y=-99))
 CLOCK_DAY = 12
 CLOCK_FACE.append(Label(SMALL_FONT, color=DATE_COLOR, text='2', y=-99))
 
-DISPLAY.show(CLOCK_FACE)
-DISPLAY.refresh()
+if forced_asleep():
+    sleep()
+else:
+    DISPLAY.show(CLOCK_FACE)
+    DISPLAY.refresh()
 
-NETWORK = Network(status_neopixel=board.NEOPIXEL, debug=False)
+NETWORK = Network(status_neopixel=board.NEOPIXEL, esp=esp, external_spi=spi, debug=False)
 NETWORK.connect() # Logs "Connecting to AP ...""
 
 # Try to read the latitude/longitude from the secrets. If not present, use IP geolocation
@@ -313,7 +348,7 @@ while True:
             if LOCAL_TIME.tm_hour >= secrets['sleep_hour'] and LOCAL_TIME.tm_hour < secrets['wake_hour'] and not ASLEEP:
                 print("Current hour is {0} and sleep_hour is {1}. Going to sleep...".format(LOCAL_TIME.tm_hour, secrets['sleep_hour']))
                 sleep()
-            if LOCAL_TIME.tm_hour >= secrets['wake_hour'] and ASLEEP:
+            if LOCAL_TIME.tm_hour >= secrets['wake_hour'] and ASLEEP and not forced_asleep():
                 print("\nCurrent hour is {0} and wake_hour is {1}. Waking up...".format(LOCAL_TIME.tm_hour, secrets['wake_hour']))
                 wake()
 
