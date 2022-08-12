@@ -7,9 +7,27 @@ echo
 echo "Erasing filesystem..."
 cp "${LIB_PATH}/Matrix_Portal_M4_Erase_Filesystem.uf2" /Volumes/MATRIXBOOT
 
+sleep 1
+while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 1 ]; do
+  echo -n "."
+  sleep 1
+done
 echo
 echo -n "DOUBLE-CLICK RESET BUTTON. Press Enter when ready:"
 read
+
+while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
+  echo -n "."
+  sleep 1
+done
 echo "Copying firmware..."
 
 cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-7.3.2.uf2" /Volumes/MATRIXBOOT/
+
+echo "Restarting..."
+while [ `dir /Volumes/|grep CIRCUITPY|wc -l` == 0 ]; do
+  echo -n "."
+  sleep 1
+done
+echo
+echo "Done!"
