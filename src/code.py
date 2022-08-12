@@ -25,7 +25,7 @@ print('Imports loaded')
 from secrets import secrets
 print('Secrets loaded')
 
-HOURS_BETWEEN_SYNC = 8  # Number of hours between syncs with time server
+HOURS_BETWEEN_SYNC = 1  # Number of hours between syncs with time server
 SECONDS_PER_HOUR = 3600 # Number of seconds in one hour = 60 * 60
 SECONDS_PER_DAY = 86400 # Number of seconds in one hour = 60 * 60
 COUNTDOWN = False       # If set, show time to vs time of rise/set events
