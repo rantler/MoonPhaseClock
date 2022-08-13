@@ -20,6 +20,7 @@ while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
   echo -n "."
   sleep 1
 done
+echo
 echo "Copying firmware..."
 
 cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-7.3.2.uf2" /Volumes/MATRIXBOOT/
