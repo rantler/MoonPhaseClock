@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.2.2'
+VERSION = '1.6.3.1'
 print('VERSION {0} ({1:,} RAM)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -17,7 +17,6 @@ from adafruit_display_text.label import Label
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
 from digitalio import DigitalInOut, Pull
-from micropython import const
 from rtc import RTC
 
 import microcontroller
@@ -60,6 +59,7 @@ DATE_COLOR = color.adjust_brightness(0x46BBDF, GLOBAL_BRIGHTNESS) # (aqua)
 PERIOD = [None, None]
 TODAY = 0
 TOMORROW = 1
+ASLEEP = False
 
 TODAY_RISE = '\u2191'   # ↑
 TODAY_SET = '\u2193'    # ↓
@@ -71,7 +71,36 @@ pin_down.switch_to_input(pull=Pull.UP) # Pull.DOWN doesn't fucking work!
 pin_up = DigitalInOut(board.BUTTON_UP)
 pin_up.switch_to_input(pull=Pull.UP)
 
-ASLEEP = False
+def get_time_from_api():
+    try:
+        if timezone: # Use provided timezone if present
+            time_url = 'http://worldtimeapi.org/api/timezone/' + timezone
+            print('Determining time using provided timezone. URL: ', time_url)
+        else: # Use IP geolocation
+            time_url = 'http://worldtimeapi.org/api/ip'
+            print('Determining time by IP geolocation. URL: ', time_url)
+    except Exception as e:
+        print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
+    datetime, dst, utc_offset = NETWORK.fetch_data(time_url, json_path=[['datetime'], ['dst'], ['utc_offset']])
+    time_struct = parse_time(datetime, dst)
+    return (time_struct, utc_offset)
+
+def get_time_from_esp():
+    times = 30
+    esp_time = 0
+    while times > 0 and esp_time == 0:
+        time.sleep(10)
+        try:
+            esp_time = esp.get_time()
+            if esp_time == 0:
+                print("get_time returned 0")
+                times -= 1
+        except Exception as e:
+            print("get_time raised")
+            times -= 1
+    print("esp.get_time() = {0}".format(esp_time))
+    utc_offset = -7 * 3600
+    return (time.localtime(esp_time[0] + utc_offset), "-07:00")
 
 def forced_asleep():
     return microcontroller.nvm[0] == 1
@@ -124,20 +153,10 @@ def parse_time(timestring, dst=-1):
     ))
 
 def update_time(timezone=None):
-    try:
-        if timezone: # Use provided timezone if present
-            time_url = 'http://worldtimeapi.org/api/timezone/' + timezone
-            print('Determining time using provided timezone. URL: ', time_url)
-        else: # Use IP geolocation
-            time_url = 'http://worldtimeapi.org/api/ip'
-            print('Determining time by IP geolocation. URL: ', time_url)
-
-        datetime, dst, utc_offset = NETWORK.fetch_data(time_url, json_path=[['datetime'], ['dst'], ['utc_offset']])
-        time_struct = parse_time(datetime, dst)
+        # time_struct, utc_offset = get_time_from_api()
+        time_struct, utc_offset = get_time_from_esp()
         RTC().datetime = time_struct
         return time_struct, utc_offset
-    except Exception as e:
-        print('Failed to set time. Error: {0}'.format(e))
 
 def hh_mm(time_struct):
     hour = 12 if time_struct.tm_hour % 12 == 0 else time_struct.tm_hour % 12
