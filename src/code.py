@@ -56,6 +56,9 @@ pin_down.switch_to_input(pull=Pull.UP) # Pull.DOWN doesn't fucking work!
 pin_up = DigitalInOut(board.BUTTON_UP)
 pin_up.switch_to_input(pull=Pull.UP)
 
+# Turn off forced-sleep when we first boot up
+microcontroller.nvm[0:1] = bytes([0])
+
 def get_utc_offset_from_api():
     utc_offset = None
     try:
