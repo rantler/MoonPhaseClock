@@ -1,7 +1,7 @@
 # Moon Phase Clock
 
 Made for Adafruit Matrix Portal: displays current time, lunar phase and time of next moonrise/sunrise or moonset/sunset.
-Requires WiFi internet access. Uses IP geolocation if timezone and/or lat/lon not provided in `secrets.py`.
+Requires WiFi internet access. Uses IP geolocation if UTC offset and/or lat/lon not provided in `secrets.py`.
 
 Written by Phil 'PaintYourDragon' Burgess for Adafruit Industries. MIT license, all text above must be included in any
 redistribution.
@@ -55,8 +55,7 @@ are not present in the `secrets.py` file, they will be looked up dynamically as 
 * `wake_hour` - An integer value representing the hour at which the clock should awake<sup>*</sup>
 * `latitude` - A floating point value representing your location, i.e. 47.57
 * `longitude` - A floating point value representing your location, i.e. -122.38
-* `offset` - A string value representing the difference from GMT / UTC, i.e. '-08:00' in your timezone
-* `timezone` - A string value representing the english timezone name, i.e. 'America/Los_Angeles'
+* `utc_offset` - A string value representing the difference from GMT / UTC in your timezone, i.e. '-08:00' in PST
 
 <sup>*</sup>_Both `sleep_hour` and `wake_hour` must be present if either one is present in order to take effect._
 
@@ -75,7 +74,7 @@ Class holding lunar data for a given day (`00:00:00` to `23:59:59`). App uses tw
 and one for the following day -- then some interpolations and such can be made.
 
 Initialize EarthData object elements (see above) from a `time.struct_time`, hours to skip ahead (typically 0 or 24), and
-a UTC offset (as a string) and a query to the MET Norway Sunrise API which provides lunar data.
+a UTC offset (as a formatted string) and a query to the MET Norway Sunrise API which provides lunar data.
 
 Sample URLs:
 
@@ -100,9 +99,7 @@ fraction it's ignored.
 
 ### `update_time` method
 
-Update system date/time from WorldTimeAPI public server no account required. Pass in time zone string - See
-<http://worldtimeapi.org/api/timezone> for a list, or `None` to use IP geolocation. Returns current local time as a
-`time.struct_time` and UTC offset as string. This may throw an exception on the `fetch_data()` call.
+Returns current local time as a `time.struct_time`. This may throw an exception on the `fetch_data()` call.
 
 ### `hh_mm` method
 

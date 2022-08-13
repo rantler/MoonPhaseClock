@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.1'
+VERSION = '1.6.3.5'
 print('VERSION {0} ({1:,} RAM)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -11,29 +11,15 @@ import adafruit_lis3dh
 import board
 import busio
 import displayio
+import microcontroller
 import supervisor
 from adafruit_bitmap_font import bitmap_font
 from adafruit_display_text.label import Label
+from adafruit_esp32spi import adafruit_esp32spi
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
 from digitalio import DigitalInOut, Pull
 from rtc import RTC
-
-import microcontroller
-
-# nvm[0] == user-induced sleep mode - (0) = awake, (1) = sleeping
-microcontroller.nvm[0:1] = bytes([0])
-
-import busio
-from adafruit_esp32spi import adafruit_esp32spi
-
-# If you are using a board with pre-defined ESP32 Pins:
-esp32_cs = DigitalInOut(board.ESP_CS)
-esp32_ready = DigitalInOut(board.ESP_BUSY)
-esp32_reset = DigitalInOut(board.ESP_RESET)
-
-spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
-esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 
 import color
 print('Imports loaded')
@@ -41,7 +27,6 @@ print('Imports loaded')
 from secrets import secrets
 print('Secrets loaded')
 
-HOURS_BETWEEN_SYNC = 1  # Number of hours between syncs with time server
 SECONDS_PER_HOUR = 3600 # Number of seconds in one hour = 60 * 60
 SECONDS_PER_DAY = 86400 # Number of seconds in one hour = 60 * 60
 COUNTDOWN = False       # If set, show time to vs time of rise/set events
@@ -71,19 +56,14 @@ pin_down.switch_to_input(pull=Pull.UP) # Pull.DOWN doesn't fucking work!
 pin_up = DigitalInOut(board.BUTTON_UP)
 pin_up.switch_to_input(pull=Pull.UP)
 
-def get_time_from_api():
+def get_utc_offset_from_api():
+    utc_offset = None
     try:
-        if timezone: # Use provided timezone if present
-            time_url = 'http://worldtimeapi.org/api/timezone/' + timezone
-            print('Determining time using provided timezone. URL: ', time_url)
-        else: # Use IP geolocation
-            time_url = 'http://worldtimeapi.org/api/ip'
-            print('Determining time by IP geolocation. URL: ', time_url)
+        print('Determining UTC offset by IP geolocation')
+        dst, utc_offset = NETWORK.fetch_data('http://worldtimeapi.org/api/ip', json_path=[['dst'], ['utc_offset']])
     except Exception as e:
         print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
-    datetime, dst, utc_offset = NETWORK.fetch_data(time_url, json_path=[['datetime'], ['dst'], ['utc_offset']])
-    time_struct = parse_time(datetime, dst)
-    return (time_struct, utc_offset)
+    return utc_offset
 
 def get_time_from_esp():
     times = 30
@@ -93,14 +73,14 @@ def get_time_from_esp():
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
-                print("get_time returned 0")
+                print('o', end='')
                 times -= 1
         except Exception as e:
-            print("get_time raised")
+            print('x', end='')
             times -= 1
-    print("esp.get_time() = {0}".format(esp_time))
-    utc_offset = -7 * 3600
-    return (time.localtime(esp_time[0] + utc_offset), "-07:00")
+    if times != 30:
+        print('')
+    return time.localtime(esp_time[0] + int(UTC_OFFSET.split(':')[0]) * 3600 + int(UTC_OFFSET.split(':')[1]) * 60)
 
 def forced_asleep():
     return microcontroller.nvm[0] == 1
@@ -152,11 +132,10 @@ def parse_time(timestring, dst=-1):
         dst # 1 = Yes, 0 = No, -1 = Unknown
     ))
 
-def update_time(timezone=None):
-        # time_struct, utc_offset = get_time_from_api()
-        time_struct, utc_offset = get_time_from_esp()
-        RTC().datetime = time_struct
-        return time_struct, utc_offset
+def update_time():
+    time_struct = get_time_from_esp()
+    RTC().datetime = time_struct
+    return time_struct
 
 def hh_mm(time_struct):
     hour = 12 if time_struct.tm_hour % 12 == 0 else time_struct.tm_hour % 12
@@ -249,8 +228,7 @@ DISPLAY = MATRIX.display
 ACCEL = adafruit_lis3dh.LIS3DH_I2C(busio.I2C(board.SCL, board.SDA), address=0x19)
 ACCEL.acceleration # Dummy read to blow out any startup residue
 time.sleep(0.1)
-DISPLAY.rotation = (int(((math.atan2(-ACCEL.acceleration.y, -ACCEL.acceleration.x) + math.pi) /
-    (math.pi * 2) + 0.875) * 4) % 4) * 90
+DISPLAY.rotation = (int(((math.atan2(-ACCEL.acceleration.y, -ACCEL.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
 if DISPLAY.rotation in (0, 180):
     LANDSCAPE_MODE = True
     SPLASH = 'splash-landscape.bmp'
@@ -271,13 +249,9 @@ SLEEPING = displayio.Group()
 # Element 0 is the splash screen image (1 of 4), later replaced with the moon phase bitmap.
 CLOCK_IMAGE = 0
 try:
-    CLOCK_FACE.append(
-        displayio.TileGrid(displayio.OnDiskBitmap(open(SPLASH, 'rb')), pixel_shader=displayio.ColorConverter())
-    )
+    CLOCK_FACE.append(displayio.TileGrid(displayio.OnDiskBitmap(open(SPLASH, 'rb')), pixel_shader=displayio.ColorConverter()))
 
-    SLEEPING.append(
-        displayio.TileGrid(displayio.OnDiskBitmap(open('sleeping.bmp', 'rb')), pixel_shader=displayio.ColorConverter())
-    )
+    SLEEPING.append(displayio.TileGrid(displayio.OnDiskBitmap(open('sleeping.bmp', 'rb')), pixel_shader=displayio.ColorConverter()))
 except Exception as e:
     print('Error loading image(s): {0}'.format(e))
     CLOCK_FACE.append(Label(SMALL_FONT, color=0xFF0000, text='OOPS'))
@@ -315,6 +289,11 @@ else:
     DISPLAY.show(CLOCK_FACE)
     DISPLAY.refresh()
 
+esp32_cs = DigitalInOut(board.ESP_CS)
+esp32_ready = DigitalInOut(board.ESP_BUSY)
+esp32_reset = DigitalInOut(board.ESP_RESET)
+spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 NETWORK = Network(status_neopixel=board.NEOPIXEL, esp=esp, external_spi=spi, debug=False)
 NETWORK.connect() # Logs "Connecting to AP ...""
 
@@ -324,36 +303,23 @@ try:
     LONGITUDE = secrets['longitude']
     print('Lat/lon determined from secrets: ', LATITUDE, LONGITUDE)
 except KeyError:
-    LATITUDE, LONGITUDE = NETWORK.fetch_data(
-        'http://www.geoplugin.net/json.gp', json_path=[['geoplugin_latitude'], ['geoplugin_longitude']]
-    )
+    LATITUDE, LONGITUDE = NETWORK.fetch_data('http://www.geoplugin.net/json.gp', json_path=[['geoplugin_latitude'], ['geoplugin_longitude']])
     print('Lat/lon determined by IP geolocation: ', LATITUDE, LONGITUDE)
 
-# Try to read the timezone from the secrets. If not present, it will be set below using IP geolocation
+# Try to read the UTC offset from the secrets. If not present, it will be set below via API call
 try:
-    TIMEZONE = secrets['timezone'] # e.g. 'America/Los_Angeles'
-    print('Timezone determined from secrets: ', LATITUDE, LONGITUDE)
-except:
-    TIMEZONE = None
-
-# Try to read the UTC offset from the secrets. If not present, it will be set below
-try:
-    UTC_OFFSET = secrets['offset']
+    UTC_OFFSET = secrets['utc_offset']
     print('UTC offset determined from secrets: ', UTC_OFFSET)
 except:
-    UTC_OFFSET = None
+    # Probably should refetch this every day at around 2:00 AM since that's when DST changes
+    UTC_OFFSET = get_utc_offset_from_api()
 
 try:
-    if UTC_OFFSET == None:
-        DATETIME, UTC_OFFSET = update_time(TIMEZONE)
-    else:
-        DATETIME, _ignored = update_time(TIMEZONE)
-    print('Setting initial clock time. UTC offset: {0}'.format(UTC_OFFSET))
+    DATETIME = update_time()
+    print('Setting initial clock time. UTC offset is {0}'.format(UTC_OFFSET))
 except Exception as e:
     log_exception_and_restart('Error setting initial clock time: {0}'.format(e))
-    # supervisor.reload() # Reboot / restart
 
-LAST_SYNC = time.mktime(DATETIME)
 PERIOD[TODAY] = EarthData(DATETIME)
 PERIOD[TOMORROW] = EarthData(time.localtime(time.mktime(DATETIME) + SECONDS_PER_DAY))
 CURRENT_DIURNAL_EVENT = 8
@@ -376,26 +342,12 @@ while True:
             check_buttons()
 
         if ASLEEP:
-            print(".", end="")
+            print('.', end='') # Really? "end=''"? Are you fucking kidding me python? wtf...
             continue
 
-        # Periodically sync with time server since on-board clock is inaccurate
+        # Sync WiFi time since on-board clock is inaccurate
+        DATETIME = update_time()
         NOW = time.time()
-        if NOW - LAST_SYNC > HOURS_BETWEEN_SYNC * SECONDS_PER_HOUR:
-            print('Syncing with time server')
-
-            try:
-                DATETIME, _ignored = update_time(TIMEZONE)
-                LAST_SYNC = time.mktime(DATETIME)
-                continue # Time may have changed; refresh NOW value
-
-            except Exception as e:
-                log_exception_and_restart('Error syncing with time server: {0}'.format(e))
-                # supervisor.reload() # Reboot / restart
-
-        # Reboot at midnight to update time and free up memory
-        # if NOW >= PERIOD[TOMORROW].midnight:
-        #     supervisor.reload() # Reboot / restart
 
         # Determine weighting of tomorrow's phase vs today's, using current time
         RATIO = ((NOW - PERIOD[TODAY].midnight) / (PERIOD[TOMORROW].midnight - PERIOD[TODAY].midnight))
