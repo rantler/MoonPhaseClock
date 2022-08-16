@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Firmware"
 
-echo -n "DOUBLE-CLICK RESET BUTTON. Press Enter when ready:"
+echo -n "DOUBLE-CLICK RESET BUTTON..."
+echo "Press Enter when ready:"
 read
+while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
+  echo -n "."
+  sleep 1
+done
 echo
 echo "Erasing filesystem..."
 cp "${LIB_PATH}/Matrix_Portal_M4_Erase_Filesystem.uf2" /Volumes/MATRIXBOOT
@@ -13,7 +18,8 @@ while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 1 ]; do
   sleep 1
 done
 echo
-echo -n "DOUBLE-CLICK RESET BUTTON. Press Enter when ready:"
+echo -n "DOUBLE-CLICK RESET BUTTON..."
+echo "Press Enter when ready:"
 read
 
 while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
