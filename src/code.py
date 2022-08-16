@@ -185,11 +185,10 @@ class EarthData():
             datetime.tm_mday,
             utc_offset)
 
-        for _ in range(5): # Number of retries
+        for _ in range(5): # Number of retries because sometimes RAM allocation intermittently fails for some reason
             try:
-                print('Fetching diurnal event data via: ' + url)
-                full_data = json.loads(wifi.fetch_data(url))
-                location_data = full_data['location']['time'][0]
+                print('Fetching daily event data via: ' + url)
+                location_data = json.loads(wifi.fetch_data(url))['location']['time'][0]
                 self.age = float(location_data['moonphase']['value']) / 100
                 self.midnight = time.mktime(parse_time(location_data['moonphase']['time']))
 
@@ -202,9 +201,8 @@ class EarthData():
                 if 'moonset' in location_data: self.moonset = time.mktime(parse_time(location_data['moonset']['time']))
                 else: self.moonset = None
 
-                full_data = None
                 location_data = None
-                gc.collect()
+                gc.collect() # helpful? ¯\_(ツ)_/¯
                 return
             except Exception as e:
                 print('Fetching moon data for date via URL: {0} failed. Error: {1}'.format(url, e))
