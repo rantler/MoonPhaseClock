@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.9'
+VERSION = '1.6.3.10'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -90,8 +90,9 @@ def sleep(forced = False):
 
 # When forced awake, will resume sleeping at the scheduled time, if configured to do so
 def wake(forced = False):
-    global asleep
+    global asleep, datetime
     if asleep:
+        datetime = update_time()
         display.show(clock_face)
         display.refresh()
         asleep = False
@@ -321,9 +322,10 @@ while True:
             if local_time.tm_hour >= secrets['wake_hour'] and asleep and not forced_asleep():
                 print("\nCurrent hour is {0} and wake_hour is {1}. Waking up...".format(local_time.tm_hour, secrets['wake_hour']))
                 wake()
+                datetime = update_time()
 
-        refresh_time = time.time() + REFRESH_DELAY
-        while(time.time() < refresh_time): check_buttons()
+        next_refresh_time = time.time() + REFRESH_DELAY
+        while(time.time() < next_refresh_time): check_buttons()
 
         if asleep:
             print('.', end = '') # Really? "end = ''"? Are you fucking kidding me python? wtf...
