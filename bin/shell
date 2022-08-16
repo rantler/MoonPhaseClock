@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 echo "^A^D to detach, ^A^\ to exit"
 echo
-echo -n "Press Enter when ready..."; read
+if [ ! "${1}" == "-n" ]; then
+  echo -n "Press Enter when ready..."; read
+fi
 DEVICE="/dev/`TERM=none ls /dev/|grep tty.usbmodem`"
 screen ${DEVICE} 115200
 reset
