@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.10'
+VERSION = '1.6.3.11'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -92,10 +92,10 @@ def sleep(forced = False):
 def wake(forced = False):
     global asleep, datetime
     if asleep:
-        datetime = update_time()
         display.show(clock_face)
         display.refresh()
         asleep = False
+        datetime = update_time()
     if forced: microcontroller.nvm[0:1] = bytes([0])
 
 def check_buttons():
@@ -312,7 +312,6 @@ asleep = False
 
 while True:
     try:
-        gc.collect()
         local_time = time.localtime()
 
         if secrets['sleep_hour'] != None and secrets['wake_hour'] != None:
@@ -329,6 +328,7 @@ while True:
 
         if asleep:
             print('.', end = '') # Really? "end = ''"? Are you fucking kidding me python? wtf...
+            check_buttons()
             continue
 
         # Sync WiFi time since on-board clock is inaccurate
@@ -433,7 +433,8 @@ while True:
         clock_face[CLOCK_DAY].y = TIME_Y + 10
 
         check_buttons()
-
         display.refresh()
+        gc.collect()
+
         print('Moon Clock - local time is {0} - Version {1} ({2:,} RAM free)'.format(strftime(local_time), VERSION, gc.mem_free()))
     except Exception as e: log_exception_and_restart('Unexpected exception: {0}'.format(e))
