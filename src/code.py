@@ -49,7 +49,7 @@ SMALL_FONT = bitmap_font.load_font('/fonts/helvR10.bdf')
 SYMBOL_FONT = bitmap_font.load_font('/fonts/6x10.bdf')
 LARGE_FONT.load_glyphs('0123456789:')
 SMALL_FONT.load_glyphs('0123456789:/.%')
-SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1')
+SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1') # ↑ ↓ ↟ ↡
 
 ########################################################################################################################
 
