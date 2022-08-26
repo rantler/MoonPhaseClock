@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.11'
+VERSION = '1.6.3.2'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -30,6 +30,7 @@ BIT_DEPTH = 6
 REFRESH_DELAY = 10
 TODAY = 0
 TOMORROW = 1
+NUM_EVENTS = 8
 
 TODAY_RISE = '\u2191'   # ↑
 TODAY_SET = '\u2193'    # ↓
@@ -305,7 +306,7 @@ days = [
     EarthData(datetime),
     EarthData(time.localtime(time.mktime(datetime) + 86400)) # seconds in a day
 ]
-current_clock_event = 8
+current_event = NUM_EVENTS
 asleep = False
 
 ########################################################################################################################
@@ -407,17 +408,17 @@ while True:
         clock_face[3].x, clock_face[3].y = clock_face[CLOCK_MOON_PHASE].x + 1, clock_face[CLOCK_MOON_PHASE].y
         clock_face[4].x, clock_face[4].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y + 1
 
-        if current_clock_event == 8:   display_event('Sunrise today', days[TODAY].sunrise, TODAY_RISE)
-        elif current_clock_event == 7: display_event('Sunset today', days[TODAY].sunset, TODAY_SET)
-        elif current_clock_event == 6: display_event('Moonrise today', days[TODAY].moonrise, TODAY_RISE)
-        elif current_clock_event == 5: display_event('Moonset today', days[TODAY].moonset, TODAY_SET)
-        elif current_clock_event == 4: display_event('Sunrise tomorrow', days[TOMORROW].sunrise, TOMORROW_RISE)
-        elif current_clock_event == 3: display_event('Sunset tomorrow', days[TOMORROW].sunset, TOMORROW_SET)
-        elif current_clock_event == 2: display_event('Moonrise tomorrow', days[TOMORROW].moonrise, TOMORROW_RISE)
-        elif current_clock_event == 1: display_event('Moonset tomorrow', days[TOMORROW].moonset, TOMORROW_SET)
+        if current_event == NUM_EVENTS: display_event('Sunrise today', days[TODAY].sunrise, TODAY_RISE)
+        elif current_event == 7: display_event('Sunset today', days[TODAY].sunset, TODAY_SET)
+        elif current_event == 6: display_event('Moonrise today', days[TODAY].moonrise, TODAY_RISE)
+        elif current_event == 5: display_event('Moonset today', days[TODAY].moonset, TODAY_SET)
+        elif current_event == 4: display_event('Sunrise tomorrow', days[TOMORROW].sunrise, TOMORROW_RISE)
+        elif current_event == 3: display_event('Sunset tomorrow', days[TOMORROW].sunset, TOMORROW_SET)
+        elif current_event == 2: display_event('Moonrise tomorrow', days[TOMORROW].moonrise, TOMORROW_RISE)
+        elif current_event == 1: display_event('Moonset tomorrow', days[TOMORROW].moonset, TOMORROW_SET)
 
         # Each time through the main loop, we show a different event (in reverse order), wrapping around at the end
-        current_clock_event -= 1 if current_clock_event == 1 else 8
+        current_event = current_event - 1 if current_event > 1 else NUM_EVENTS
 
         clock_face[CLOCK_TIME].text = hh_mm(local_time)
         clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
