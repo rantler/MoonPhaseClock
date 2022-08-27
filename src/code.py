@@ -57,7 +57,7 @@ def get_utc_offset_from_api():
     utc_offset = None
     try:
         print('Determining UTC offset by IP geolocation')
-        dst, utc_offset = wifi.fetch_data('http://worldtimeapi.org/api/ip', json_path=[['dst'], ['utc_offset']])
+        dst, utc_offset = wifi.fetch_data('http://worldtimeapi.org/api/ip', json_path = [['dst'], ['utc_offset']])
     except Exception as e:
         print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
     return utc_offset
@@ -70,10 +70,10 @@ def get_time_from_esp():
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
-                print('o', end='')
+                print('o', end = '')
                 times -= 1
         except Exception as e:
-            print('x', end='')
+            print('x', end = '')
             times -= 1
     if times != 30: print('')
     return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
@@ -107,7 +107,7 @@ def check_buttons():
         while not pin_up.value: pass
         wake(forced = True)
 
-def parse_time(timestring, dst=-1):
+def parse_time(timestring, dst = -1):
     date_time = timestring.split('T')
     year_month_day = date_time[0].split('-')
     hour_minute_second = date_time[1].split('+')[0].split('-')[0].split(':')
@@ -154,7 +154,7 @@ def display_event(name, event, icon):
         EVENT_COLOR = clock_face[CLOCK_EVENT].color = MOON_EVENT_COLOR
         event_time = '{0}:{1:0>2}'.format(time_struct.tm_hour, time_struct.tm_min)
 
-    clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color=EVENT_COLOR, text=event_time, y=EVENT_Y)
+    clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color = EVENT_COLOR, text = event_time, y = EVENT_Y)
     clock_face[CLOCK_EVENT].x = max(CLOCK_GLYPH_X + 6, CENTER_X - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
     clock_face[CLOCK_EVENT].y = EVENT_Y
 
@@ -234,11 +234,11 @@ snoozing = displayio.Group()
 # Element 0 is the splash screen image (1 of 2), later replaced with the moon phase image and clock face.
 try:
     splash_screen_image = 'splash-landscape.bmp' if landscape_orientation else 'splash-portrait.bmp'
-    clock_face.append(displayio.TileGrid(displayio.OnDiskBitmap(open(splash_screen_image, 'rb')), pixel_shader=displayio.ColorConverter()))
-    snoozing.append(displayio.TileGrid(displayio.OnDiskBitmap(open('sleeping.bmp', 'rb')), pixel_shader=displayio.ColorConverter()))
+    clock_face.append(displayio.TileGrid(displayio.OnDiskBitmap(open(splash_screen_image, 'rb')), pixel_shader = displayio.ColorConverter()))
+    snoozing.append(displayio.TileGrid(displayio.OnDiskBitmap(open('sleeping.bmp', 'rb')), pixel_shader = displayio.ColorConverter()))
 except Exception as e:
     print('Error loading image(s): {0}'.format(e))
-    clock_face.append(Label(SMALL_FONT, color=0xFF0000, text='OOPS!'))
+    clock_face.append(Label(SMALL_FONT, color = 0xFF0000, text = 'ERROR!'))
     clock_face[0].x = (display.width - clock_face[0].bounding_box[2] + 1) // 2 # Integer division
     clock_face[0].y = display.height // 2 - 1 # Integer division
 
@@ -250,26 +250,26 @@ display.refresh()
 
 # Elements 1-4 are a black outline around the moon percentage with text labels offset by 1 pixel. Initial text
 # value must be long enough for longest anticipated string later since the bounding box is calculated here.
-for i in range(4): clock_face.append(Label(SMALL_FONT, color=0, text='99.9%', y=-99))
+for i in range(4): clock_face.append(Label(SMALL_FONT, color = 0, text = '99.9%', y = -99))
 
 CLOCK_MOON_PHASE = 5
-clock_face.append(Label(SMALL_FONT, color=MOON_PHASE_COLOR, text='99.9%', y=-99))
+clock_face.append(Label(SMALL_FONT, color = MOON_PHASE_COLOR, text = '99.9%', y = -99))
 CLOCK_TIME = 6
-clock_face.append(Label(LARGE_FONT, color=TIME_COLOR, text='24:59', y=-99))
+clock_face.append(Label(LARGE_FONT, color = TIME_COLOR, text = '24:59', y = -99))
 CLOCK_DATE = 7
-clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12/31', y=-99))
+clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12/31', y = -99))
 # Element 8 is a symbol indicating next rise or set - Color is overridden by event colors
 CLOCK_GLYPH = 8
-clock_face.append(Label(SYMBOL_FONT, color=0x00FF00, text='x', y=-99))
+clock_face.append(Label(SYMBOL_FONT, color = 0x00FF00, text = 'x', y = -99))
 # Element 9 is the time of (or time to) next rise/set event - Color is overridden by event colors
 CLOCK_EVENT = 9
-clock_face.append(Label(SMALL_FONT, color=0x00FF00, text='24:59', y=-99))
+clock_face.append(Label(SMALL_FONT, color = 0x00FF00, text = '24:59', y = -99))
 CLOCK_MONTH = 10
-clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12', y=-99))
+clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12', y = -99))
 CLOCK_SLASH = 11
-clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='/', y=-99))
+clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '/', y = -99))
 CLOCK_DAY = 12
-clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='2', y=-99))
+clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '2', y = -99))
 
 # Setup and connect to WiFi access point
 esp32_cs = DigitalInOut(board.ESP_CS)
@@ -277,7 +277,7 @@ esp32_ready = DigitalInOut(board.ESP_BUSY)
 esp32_reset = DigitalInOut(board.ESP_RESET)
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
-wifi = Network(status_neopixel=board.NEOPIXEL, esp=esp, external_spi=spi, debug=False)
+wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
 wifi.connect() # Logs "Connecting to AP ...""
 # TODO: Reconnect to WiFi after temporary connection loss in main clock loop
 
@@ -287,7 +287,7 @@ try:
     longitude = secrets['longitude']
     print('Lat/lon determined from secrets: {0}, {1}'.format(latitude, longitude))
 except KeyError:
-    latitude, longitude = wifi.fetch_data('http://www.geoplugin.net/json.gp', json_path=[['geoplugin_latitude'], ['geoplugin_longitude']])
+    latitude, longitude = wifi.fetch_data('http://www.geoplugin.net/json.gp', json_path = [['geoplugin_latitude'], ['geoplugin_longitude']])
     print('Lat/lon determined from IP geolocation: {0}, {1}'.format(latitude, longitude))
 
 # Try to read the UTC offset from the secrets. If not present, it will be set below via API call
@@ -424,7 +424,7 @@ while True:
         clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
         clock_face[CLOCK_TIME].y = TIME_Y
 
-        clock_face[CLOCK_MONTH] = Label(SMALL_FONT, color=DATE_COLOR, text=str(local_time.tm_mon), y=TIME_Y + 10)
+        clock_face[CLOCK_MONTH] = Label(SMALL_FONT, color = DATE_COLOR, text = str(local_time.tm_mon), y = TIME_Y + 10)
         clock_face[CLOCK_MONTH].x = CENTER_X - 1 - clock_face[CLOCK_MONTH].bounding_box[2]
         clock_face[CLOCK_SLASH].text = '/'
         clock_face[CLOCK_SLASH].x = CENTER_X
