@@ -1,25 +1,26 @@
 import gc
 
-VERSION = '1.6.3.2'
+VERSION = '1.6.3.3'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
 import math
 import time
 
-import adafruit_lis3dh
 import board
 import busio
 import displayio
-import microcontroller
-import supervisor
+
 from adafruit_bitmap_font import bitmap_font
 from adafruit_display_text.label import Label
 from adafruit_esp32spi import adafruit_esp32spi
+from adafruit_lis3dh import LIS3DH_I2C
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
 from digitalio import DigitalInOut, Pull
+from microcontroller import nvm
 from rtc import RTC
+from supervisor import reload
 
 import color
 from secrets import secrets
@@ -78,7 +79,7 @@ def get_time_from_esp():
     if times != 30: print('')
     return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
 
-def forced_asleep(): return microcontroller.nvm[0] == 1
+def forced_asleep(): return nvm[0] == 1
 
 # When forced asleep, the clock will remain sleeping until forced awake
 def sleep(forced = False):
@@ -87,7 +88,7 @@ def sleep(forced = False):
         display.show(snoozing)
         display.refresh()
         asleep = True
-    if forced: microcontroller.nvm[0:1] = bytes([1])
+    if forced: nvm[0:1] = bytes([1])
 
 # When forced awake, will resume sleeping at the scheduled time, if configured to do so
 def wake(forced = False):
@@ -97,7 +98,7 @@ def wake(forced = False):
         display.refresh()
         asleep = False
         datetime = update_time()
-    if forced: microcontroller.nvm[0:1] = bytes([0])
+    if forced: nvm[0:1] = bytes([0])
 
 def check_buttons():
     if not pin_down.value: # negating to indicate button pressed because Pull.UP 😵
@@ -173,7 +174,7 @@ def log_exception_and_restart(e):
     except Exception as e:
         print(msg)
         print(str(e))
-    supervisor.reload() # Reboot / restart
+        reload() # Reboot / restart
 
 ########################################################################################################################
 
@@ -219,11 +220,11 @@ pin_up = DigitalInOut(board.BUTTON_UP)
 pin_up.switch_to_input(pull = Pull.UP)
 
 # Turn off forced-sleep when we first boot up
-microcontroller.nvm[0:1] = bytes([0])
+nvm[0:1] = bytes([0])
 
 # Setup LED matrix, orientation, and display groups
 display = Matrix(bit_depth = BIT_DEPTH).display
-accelerometer = adafruit_lis3dh.LIS3DH_I2C(busio.I2C(board.SCL, board.SDA), address = 0x19)
+accelerometer = LIS3DH_I2C(busio.I2C(board.SCL, board.SDA), address = 0x19)
 accelerometer.acceleration # Dummy read to clear any existing data
 time.sleep(0.1)
 display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
@@ -368,22 +369,22 @@ while True:
                 moon_risen = True
 
         if landscape_orientation:
-            CENTER_X = 48      # Text along right
-            MOON_Y = 0         # Moon at left
+            MOON_Y = 0         # Moon at the left
+            CENTER_X = 48      # Text on the right
             TIME_Y = 6         # Time at top right
-            EVENT_Y = 27       # Rise/set at bottom right
-            CLOCK_GLYPH_X = 30
-        else:                  # Vertical 'portrait' orientation
+            EVENT_Y = 27       # Events at bottom right
+            CLOCK_GLYPH_X = 30 # Rise/set indicator
+        else:                  # Vertical orientation
             CENTER_X = 16      # Text down center
-            CLOCK_GLYPH_X = 0
+            CLOCK_GLYPH_X = 0  # Rise/set indicator
             if moon_risen:
-                MOON_Y = 0     # Moon at top
+                MOON_Y = 0     # Moon at the top
+                TIME_Y = 49    # Time/date at the bottom
                 EVENT_Y = 38   # Rise/set in middle
-                TIME_Y = 49    # Time/date at bottom
             else:
-                TIME_Y = 6     # Time/date at top
+                MOON_Y = 32    # Moon at the bottom
+                TIME_Y = 6     # Time/date at the top
                 EVENT_Y = 26   # Rise/set in middle
-                MOON_Y = 32    # Moon at bottom
 
         try:
             bitmap = displayio.OnDiskBitmap(open('moon/moon{0:0>2}.bmp'.format(moon_frame), 'rb'))
@@ -424,14 +425,9 @@ while True:
         clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
         clock_face[CLOCK_TIME].y = TIME_Y
 
-        clock_face[CLOCK_MONTH] = Label(SMALL_FONT, color = DATE_COLOR, text = str(local_time.tm_mon), y = TIME_Y + 10)
-        clock_face[CLOCK_MONTH].x = CENTER_X - 1 - clock_face[CLOCK_MONTH].bounding_box[2]
-        clock_face[CLOCK_SLASH].text = '/'
-        clock_face[CLOCK_SLASH].x = CENTER_X
-        clock_face[CLOCK_SLASH].y = TIME_Y + 10
-        clock_face[CLOCK_DAY].text = str(local_time.tm_mday)
-        clock_face[CLOCK_DAY].x = CENTER_X + 4
-        clock_face[CLOCK_DAY].y = TIME_Y + 10
+        clock_face[CLOCK_MONTH].text = '{0}-{1:0>2}'.format(local_time.tm_mon, local_time.tm_mday)
+        clock_face[CLOCK_MONTH].x = CENTER_X - clock_face[CLOCK_MONTH].bounding_box[2] // 2
+        clock_face[CLOCK_MONTH].y = TIME_Y + 10
 
         check_buttons()
         display.refresh()
