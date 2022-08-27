@@ -267,10 +267,6 @@ CLOCK_EVENT = 9
 clock_face.append(Label(SMALL_FONT, color = 0x00FF00, text = '24:59', y = -99))
 CLOCK_MONTH = 10
 clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12', y = -99))
-CLOCK_SLASH = 11
-clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '/', y = -99))
-CLOCK_DAY = 12
-clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '2', y = -99))
 
 # Setup and connect to WiFi access point
 esp32_cs = DigitalInOut(board.ESP_CS)
