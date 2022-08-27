@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.3'
+VERSION = '1.6.3.4'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -265,7 +265,7 @@ clock_face.append(Label(SYMBOL_FONT, color = 0x00FF00, text = 'x', y = -99))
 # Element 9 is the time of (or time to) next rise/set event - Color is overridden by event colors
 CLOCK_EVENT = 9
 clock_face.append(Label(SMALL_FONT, color = 0x00FF00, text = '24:59', y = -99))
-CLOCK_MONTH = 10
+CLOCK_DATE = 10
 clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12', y = -99))
 
 # Setup and connect to WiFi access point
@@ -368,6 +368,7 @@ while True:
             MOON_Y = 0         # Moon at the left
             CENTER_X = 48      # Text on the right
             TIME_Y = 6         # Time at top right
+            DATE_Y = 16
             EVENT_Y = 27       # Events at bottom right
             CLOCK_GLYPH_X = 30 # Rise/set indicator
         else:                  # Vertical orientation
@@ -375,12 +376,14 @@ while True:
             CLOCK_GLYPH_X = 0  # Rise/set indicator
             if moon_risen:
                 MOON_Y = 0     # Moon at the top
-                TIME_Y = 49    # Time/date at the bottom
-                EVENT_Y = 38   # Rise/set in middle
+                TIME_Y = 37
+                DATE_Y = 47
+                EVENT_Y = 57
             else:
                 MOON_Y = 32    # Moon at the bottom
-                TIME_Y = 6     # Time/date at the top
-                EVENT_Y = 26   # Rise/set in middle
+                TIME_Y = 6
+                DATE_Y = 16
+                EVENT_Y = 26
 
         try:
             bitmap = displayio.OnDiskBitmap(open('moon/moon{0:0>2}.bmp'.format(moon_frame), 'rb'))
@@ -392,11 +395,10 @@ while True:
 
         check_buttons()
 
-        # Set CLOCK_MOON_PHASE first, use its size and position for painting the outlines below
+        # Set CLOCK_MOON_PHASE first, use its size and position for painting the outlines below in elements 1-4
         clock_face[CLOCK_MOON_PHASE].text = '100%' if percent >= 99.95 else '{:.1f}%'.format(percent + 0.05)
         clock_face[CLOCK_MOON_PHASE].x = 16 - clock_face[CLOCK_MOON_PHASE].bounding_box[2] // 2 # Integer division
         clock_face[CLOCK_MOON_PHASE].y = MOON_Y + 16
-        # Elements 1-4 are the black outline, while element 5 (CLOCK_MOON_PHASE) is the visible percentage text
         for i in range(1, 5): clock_face[i].text = clock_face[CLOCK_MOON_PHASE].text
 
         # Paint the black outline text labels for the current moon percentage by offsetting by 1 pixel in each direction
@@ -421,9 +423,9 @@ while True:
         clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
         clock_face[CLOCK_TIME].y = TIME_Y
 
-        clock_face[CLOCK_MONTH].text = '{0}-{1:0>2}'.format(local_time.tm_mon, local_time.tm_mday)
-        clock_face[CLOCK_MONTH].x = CENTER_X - clock_face[CLOCK_MONTH].bounding_box[2] // 2
-        clock_face[CLOCK_MONTH].y = TIME_Y + 10
+        clock_face[CLOCK_DATE].text = '{0}-{1:0>2}'.format(local_time.tm_mon, local_time.tm_mday)
+        clock_face[CLOCK_DATE].x = CENTER_X - clock_face[CLOCK_DATE].bounding_box[2] // 2
+        clock_face[CLOCK_DATE].y = DATE_Y
 
         check_buttons()
         display.refresh()
