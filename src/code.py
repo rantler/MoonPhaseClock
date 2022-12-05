@@ -64,10 +64,10 @@ def get_utc_offset_from_api():
     return utc_offset
 
 def get_time_from_esp():
-    times = 30
+    times = 10
     esp_time = 0
     while times > 0 and esp_time == 0:
-        time.sleep(30)
+        time.sleep(1)
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
@@ -76,8 +76,11 @@ def get_time_from_esp():
         except Exception as e:
             print('x', end = '')
             times -= 1
-    if times != 30: print('')
-    return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
+    if times != 10: print('')
+    if esp_time != 0:
+        return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
+    else:
+        return None
 
 def forced_asleep(): return nvm[0] == 1
 
@@ -127,8 +130,11 @@ def parse_time(timestring, dst = 0):
 
 def update_time():
     time_struct = get_time_from_esp()
-    RTC().datetime = time_struct
-    return time_struct
+    if time_struct != None:
+        RTC().datetime = time_struct
+        return time_struct
+    else:
+        return RTC().datetime
 
 def hh_mm(time_struct):
     hour = 12 if time_struct.tm_hour % 12 == 0 else time_struct.tm_hour % 12
@@ -208,7 +214,7 @@ class EarthData():
                 gc.collect() # helpful? ¯\_(ツ)_/¯
                 return
             except Exception as e:
-                print('Fetching event data for date via URL: {0} failed. Error: {1}'.format(url, e))
+                print('Fetching moon data for date via URL: {0} failed. Error: {1}'.format(url, e))
                 time.sleep(15)
 
 ########################################################################################################################
@@ -274,7 +280,7 @@ esp32_ready = DigitalInOut(board.ESP_BUSY)
 esp32_reset = DigitalInOut(board.ESP_RESET)
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
-wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
+wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = True)
 wifi.connect() # Logs "Connecting to AP ...""
 # TODO: Reconnect to WiFi after temporary connection loss in main clock loop
 
