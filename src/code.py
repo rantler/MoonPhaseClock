@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.5'
+VERSION = '1.6.3.6'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -67,11 +67,11 @@ def get_time_from_esp():
     times = 30
     esp_time = 0
     while times > 0 and esp_time == 0:
-        time.sleep(10)
+        time.sleep(30)
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
-                print('o', end = '')
+                print('o', end = '') # The argument is called "end"?! Are you kidding me? WTF! 🤦‍♂️
                 times -= 1
         except Exception as e:
             print('x', end = '')
@@ -208,7 +208,7 @@ class EarthData():
                 gc.collect() # helpful? ¯\_(ツ)_/¯
                 return
             except Exception as e:
-                print('Fetching moon data for date via URL: {0} failed. Error: {1}'.format(url, e))
+                print('Fetching event data for date via URL: {0} failed. Error: {1}'.format(url, e))
                 time.sleep(15)
 
 ########################################################################################################################
