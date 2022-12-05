@@ -280,7 +280,7 @@ esp32_ready = DigitalInOut(board.ESP_BUSY)
 esp32_reset = DigitalInOut(board.ESP_RESET)
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
-wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = True)
+wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
 wifi.connect() # Logs "Connecting to AP ...""
 # TODO: Reconnect to WiFi after temporary connection loss in main clock loop
 
