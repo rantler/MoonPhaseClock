@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.3.7'
+VERSION = '1.6.4.5'
 print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -10,6 +10,14 @@ import time
 import board
 import busio
 import displayio
+from microcontroller import watchdog
+from watchdog import WatchDogMode
+
+from microcontroller import nvm
+from rtc import RTC
+from supervisor import reload
+
+import color
 
 from adafruit_bitmap_font import bitmap_font
 from adafruit_display_text.label import Label
@@ -18,17 +26,14 @@ from adafruit_lis3dh import LIS3DH_I2C
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_matrixportal.network import Network
 from digitalio import DigitalInOut, Pull
-from microcontroller import nvm
-from rtc import RTC
-from supervisor import reload
 
-import color
 from secrets import secrets
 
 print('Imports loaded - ({0:,} RAM free)'.format(gc.mem_free()))
 
+WATCHDOG_TIMEOUT = 12   # This is close to the maximum allowed value
+REFRESH_DELAY = 10      # This cannot exceed WATCHDOG_TIMEOUT
 BIT_DEPTH = 6
-REFRESH_DELAY = 10
 TODAY = 0
 TOMORROW = 1
 NUM_EVENTS = 8
@@ -55,23 +60,25 @@ SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1') # ↑ ↓ ↟ ↡
 ########################################################################################################################
 
 def get_utc_offset_from_api():
-    utc_offset = None
     try:
         print('Determining UTC offset by IP geolocation')
+        watchdog.feed()
         dst, utc_offset = wifi.fetch_data('http://worldtimeapi.org/api/ip', json_path = [['dst'], ['utc_offset']])
+        watchdog.feed()
     except Exception as e:
         print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
     return utc_offset
 
 def get_time_from_esp():
-    times = 10
+    # Often the get_time function just fails for a while, so you have call it again and again 🤷‍♂️
+    times = 30
     esp_time = 0
     while times > 0 and esp_time == 0:
         time.sleep(1)
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
-                print('o', end = '') # The argument is called "end"?! Are you kidding me? WTF! 🤦‍♂️
+                print('o', end = '')
                 times -= 1
         except Exception as e:
             print('x', end = '')
@@ -86,7 +93,7 @@ def forced_asleep(): return nvm[0] == 1
 
 # When forced asleep, the clock will remain sleeping until forced awake
 def sleep(forced = False):
-    global asleep # Are you fucking kidding me? Python is teh sux0rz! 😂
+    global asleep
     if not asleep:
         display.show(snoozing)
         display.refresh()
@@ -114,15 +121,15 @@ def check_buttons():
 def parse_time(timestring, dst = 0):
     date_time = timestring.split('T')
     year_month_day = date_time[0].split('-')
-    hour_minute_second = date_time[1].split('+')[0].split('-')[0].split(':')
+    hour_minute = date_time[1].split('+')[0].split('-')[0].split(':')
 
     return time.struct_time(( # Note: Extra parenthesis are needed because struct_time() now takes a tuple
         int(year_month_day[0]),
         int(year_month_day[1]),
         int(year_month_day[2]),
-        int(hour_minute_second[0]),
-        int(hour_minute_second[1]),
-        int(hour_minute_second[2].split('.')[0]),
+        int(hour_minute[0]),
+        int(hour_minute[1]),
+        0, # second not provided
         -1, # day of week
         -1, # day of year
         dst # 1 = Yes, 0 = No, -1 = Unknown
@@ -182,11 +189,38 @@ def log_exception_and_restart(e):
         print(str(e))
         reload() # Reboot / restart
 
+# Try to read the latitude/longitude from the secrets. If not present, then use IP geolocation
+def get_lat_long():
+    global latitude, longitude
+    try:
+        latitude = secrets['latitude']
+        longitude = secrets['longitude']
+        print('Lat/lon determined from secrets: {0}, {1}'.format(latitude, longitude))
+    except KeyError:
+        latitude, longitude = wifi.fetch_data('http://www.geoplugin.net/json.gp', json_path = [['geoplugin_latitude'], ['geoplugin_longitude']])
+        print('Lat/lon determined from IP geolocation: {0}, {1}'.format(latitude, longitude))
+
+# Try to read the UTC offset from the secrets. If not present, it will be set below via API call
+def get_utc_offset():
+    global utc_offset
+    try:
+        utc_offset = secrets['utc_offset']
+        print('UTC offset determined from secrets: ' + utc_offset)
+    except: utc_offset = get_utc_offset_from_api()
+
 ########################################################################################################################
 
-class EarthData():
+class SolarEphemera():
+    global latitude, longitude, utc_offset
     def __init__(self, datetime):
-        url = 'https://api.met.no/weatherapi/sunrise/2.0/.json?lat={0}&lon={1}&date={2:0>2}-{3:0>2}-{4:0>2}&offset={5}'.format(
+        sun_url = 'https://api.met.no/weatherapi/sunrise/3.0/sun?lat={0}&lon={1}&date={2:0>2}-{3:0>2}-{4:0>2}&offset={5}'.format(
+            latitude,
+            longitude,
+            datetime.tm_year,
+            datetime.tm_mon,
+            datetime.tm_mday,
+            utc_offset)
+        moon_url = 'https://api.met.no/weatherapi/sunrise/3.0/moon?lat={0}&lon={1}&date={2:0>2}-{3:0>2}-{4:0>2}&offset={5}'.format(
             latitude,
             longitude,
             datetime.tm_year,
@@ -194,28 +228,24 @@ class EarthData():
             datetime.tm_mday,
             utc_offset)
 
-        for _ in range(5): # Number of retries because sometimes RAM allocation intermittently fails for some reason
-            try:
-                print('Fetching daily event data via: ' + url)
-                location_data = json.loads(wifi.fetch_data(url))['location']['time'][0]
-                self.age = float(location_data['moonphase']['value']) / 100
-                self.midnight = time.mktime(parse_time(location_data['moonphase']['time']))
+        print('Fetching daily sun event data via: ' + sun_url)
+        print('Fetching daily moon event data via: ' + moon_url)
+        watchdog.feed()
+        sun_response = json.loads(wifi.fetch_data(sun_url))
+        watchdog.feed()
+        moon_response = json.loads(wifi.fetch_data(moon_url))
+        watchdog.feed()
+        self.sunrise = None
+        self.sunset = None
+        self.moonset = None
+        self.moonrise = None
+        self.age = float(moon_response['properties']['moonphase']) / 180
 
-                if 'sunrise' in location_data: self.sunrise = time.mktime(parse_time(location_data['sunrise']['time']))
-                else: self.sunrise = None
-                if 'sunset' in location_data: self.sunset = time.mktime(parse_time(location_data['sunset']['time']))
-                else: self.sunset = None
-                if 'moonrise' in location_data: self.moonrise = time.mktime(parse_time(location_data['moonrise']['time']))
-                else: self.moonrise = None
-                if 'moonset' in location_data: self.moonset = time.mktime(parse_time(location_data['moonset']['time']))
-                else: self.moonset = None
-
-                location_data = None
-                gc.collect() # helpful? ¯\_(ツ)_/¯
-                return
-            except Exception as e:
-                print('Fetching moon data for date via URL: {0} failed. Error: {1}'.format(url, e))
-                time.sleep(15)
+        if 'sunrise' in sun_response['properties']: self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
+        if 'sunset' in sun_response['properties']: self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
+        if 'moonrise' in moon_response['properties']: self.moonrise = time.mktime(parse_time(moon_response['properties']['moonrise']['time']))
+        if 'moonset' in moon_response['properties']: self.moonset = time.mktime(parse_time(moon_response['properties']['moonset']['time']))
+        return
 
 ########################################################################################################################
 
@@ -282,23 +312,19 @@ spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
 wifi.connect() # Logs "Connecting to AP ...""
-# TODO: Reconnect to WiFi after temporary connection loss in main clock loop
 
-# Try to read the latitude/longitude from the secrets. If not present, then use IP geolocation
-try:
-    latitude = secrets['latitude']
-    longitude = secrets['longitude']
-    print('Lat/lon determined from secrets: {0}, {1}'.format(latitude, longitude))
-except KeyError:
-    latitude, longitude = wifi.fetch_data('http://www.geoplugin.net/json.gp', json_path = [['geoplugin_latitude'], ['geoplugin_longitude']])
-    print('Lat/lon determined from IP geolocation: {0}, {1}'.format(latitude, longitude))
+# Watchdog resets the board whenever a request times out or some other delay occurs
+watchdog.timeout = WATCHDOG_TIMEOUT
+watchdog.mode = WatchDogMode.RESET
 
-# Try to read the UTC offset from the secrets. If not present, it will be set below via API call
-try:
-    utc_offset = secrets['utc_offset']
-    print('UTC offset determined from secrets: ' + utc_offset)
-# Probably should refetch this every day at around 2:00 AM since that's when DST changes
-except: utc_offset = get_utc_offset_from_api()
+current_event = NUM_EVENTS
+asleep = False
+latitude = None
+longitude = None
+utc_offset = None
+
+get_utc_offset()
+get_lat_long()
 
 try:
     datetime = update_time()
@@ -306,15 +332,16 @@ try:
 except Exception as e: log_exception_and_restart('Error setting initial clock time: {0}'.format(e))
 
 days = [
-    EarthData(datetime),
-    EarthData(time.localtime(time.mktime(datetime) + 86400)) # seconds in a day
+    SolarEphemera(datetime),
+    SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
 ]
-current_event = NUM_EVENTS
-asleep = False
 
 ########################################################################################################################
 
 while True:
+    watchdog.feed()
+    display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
+    landscape_orientation = display.rotation in (0, 180)
     try:
         local_time = time.localtime()
 
@@ -325,13 +352,21 @@ while True:
             if local_time.tm_hour >= secrets['wake_hour'] and asleep and not forced_asleep():
                 print("\nCurrent hour is {0} and wake_hour is {1}. Waking up...".format(local_time.tm_hour, secrets['wake_hour']))
                 wake()
+                # Refetch this every day upon wake since DST changes at around 2:00 AM local time
+                get_utc_offset()
+                datetime = update_time()
+                # Regenerate the SolarEphemera to update moon phase and rise/set times
+                days = [
+                    SolarEphemera(datetime),
+                    SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
+                ]
                 datetime = update_time()
 
         next_refresh_time = time.time() + REFRESH_DELAY
         while(time.time() < next_refresh_time): check_buttons()
 
         if asleep:
-            print('.', end = '') # Really? "end = ''"? Are you fucking kidding me python? wtf...
+            print('.', end = '')
             check_buttons()
             continue
 
@@ -341,34 +376,12 @@ while True:
 
         check_buttons()
 
-        # Determine weighting of tomorrow's phase vs today's, using current time
-        ratio = (current_time - days[TODAY].midnight) / (days[TOMORROW].midnight - days[TODAY].midnight)
-
-        if days[TODAY].age < days[TOMORROW].age:
-            age = (days[TODAY].age + (days[TOMORROW].age - days[TODAY].age) * ratio) % 1.0
+        moon_frame = int(days[TODAY].age * 100) % 100 # Bitmap 0 to 99
+        # The moon "fills up" to 180 which is full moon, then "drains" to 360 which is new moon
+        if days[TODAY].age < 180:
+            percent = (days[TODAY].age % 180) * 100
         else:
-            # Handle age wraparound (1.0 -> 0.0). If tomorrow's age is less than today's, it indicates a new moon
-            # crossover. Add 1 to tomorrow's age when computing age delta.
-            age = (days[TODAY].age + (days[TOMORROW].age + 1 - days[TODAY].age) * ratio) % 1.0
-
-        # age can be used for direct lookup to moon bitmap (0 to 99). The images are pre-rendered for a linear
-        # timescale. Note that the solar terminator moves nonlinearly across sphere.
-        moon_frame = int(age * 100) % 100 # Bitmap 0 to 99
-
-        # Then use some trig to get percentage illuminated
-        if age <= 0.5: # New -> first quarter -> full
-            percent = (1 - math.cos(age * 2 * math.pi)) * 50
-        else:          # Full -> last quarter -> new
-            percent = (1 + math.cos((age - 0.5) * 2 * math.pi)) * 50
-
-        next_moon_event = days[TOMORROW].midnight + 100000 # Force first match
-        for day in reversed(days):
-            if day.moonrise and next_moon_event >= day.moonrise >= current_time:
-                next_moon_event = day.moonrise
-                moon_risen = False
-            if day.moonset and next_moon_event >= day.moonset >= current_time:
-                next_moon_event = day.moonset
-                moon_risen = True
+            percent = (180 - (days[TODAY].age % 180)) * 100
 
         if landscape_orientation:
             MOON_Y = 0         # Moon at the left
@@ -380,16 +393,14 @@ while True:
         else:                  # Vertical orientation
             CENTER_X = 16      # Text down center
             CLOCK_GLYPH_X = 0  # Rise/set indicator
-            if moon_risen:
-                MOON_Y = 0     # Moon at the top
-                TIME_Y = 37
-                DATE_Y = 47
-                EVENT_Y = 57
-            else:
-                MOON_Y = 32    # Moon at the bottom
-                TIME_Y = 6
-                DATE_Y = 16
-                EVENT_Y = 26
+            MOON_Y = 0         # Moon at the top
+            TIME_Y = 37
+            DATE_Y = 47
+            EVENT_Y = 57
+            # MOON_Y = 32      # Moon at the bottom
+            # TIME_Y = 6
+            # DATE_Y = 16
+            # EVENT_Y = 26
 
         try:
             bitmap = displayio.OnDiskBitmap(open('moon/moon{0:0>2}.bmp'.format(moon_frame), 'rb'))
