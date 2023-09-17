@@ -197,3 +197,56 @@ storage.erase_filesystem()
 ```
 
 This will completely erase whatever was in the file system prior, and set it up with a default `boot.py` file.
+
+## Sample MET 3.0 Sunrise JSON response
+
+### Request
+
+```url
+https://api.met.no/weatherapi/sunrise/3.0/moon?lat=47.608&lon=-122.335&date=2023-09-16&offset=-07:00
+```
+
+### Result
+
+```json
+{
+  "copyright": "MET Norway",
+  "licenseURL": "https://api.met.no/license_data.html",
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      -122.3,
+      47.6
+    ]
+  },
+  "when": {
+    "interval": [
+      "2023-09-16T08:09:00Z",
+      "2023-09-17T08:09:00Z"
+    ]
+  },
+  "properties": {
+    "body": "Moon",
+    "moonrise": {
+      "time": "2023-09-16T08:24-07:00",
+      "azimuth": 94.73
+    },
+    "moonset": {
+      "time": "2023-09-16T20:02-07:00",
+      "azimuth": 261.16
+    },
+    "high_moon": {
+      "time": "2023-09-16T14:19-07:00",
+      "disc_centre_elevation": 37.14,
+      "visible": true
+    },
+    "low_moon": {
+      "time": "2023-09-16T01:59-07:00",
+      "disc_centre_elevation": -44.64,
+      "visible": false
+    },
+    "moonphase": 14.01
+  }
+}
+```
