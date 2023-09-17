@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.5.4'
+VERSION = '1.6.5.5'
 print('Moon Clock: Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -82,13 +82,12 @@ def get_timestamp_from_esp32_wifi():
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
-                print('o', end = '')
+                print('.', end = '')
                 retries -= 1
         except Exception as e:
-            print('x', end = '')
+            print('!', end = '')
             retries -= 1
     if esp_time != 0:
-        print('')
         return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
     else:
         print(' FAILED!')
@@ -335,6 +334,7 @@ get_lat_long()
 try:
     print('Setting initial clock time. UTC offset is {0}'.format(utc_offset))
     datetime = update_time()
+    print('')
 except Exception as e: log_exception_and_restart('Error setting initial clock time: {0}'.format(e))
 
 days = [
