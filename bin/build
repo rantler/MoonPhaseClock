@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 SRC_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Moon Clock/src"
-LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Libraries/adafruit-circuitpython-bundle-7.x-mpy-20220727/lib"
+LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Libraries/adafruit-circuitpython-bundle-8.x-mpy-20230704/lib"
 
 mkdir -p build/lib
 

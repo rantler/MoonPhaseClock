@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.5.5'
+VERSION = '1.6.5.6'
 print('Moon Clock: Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -122,7 +122,7 @@ def check_buttons():
         while not pin_up.value: pass
         wake(forced = True)
 
-def parse_time(timestring, dst = 0):
+def parse_time(timestring):
     date_time = timestring.split('T')
     year_month_day = date_time[0].split('-')
     hour_minute = date_time[1].split('+')[0].split('-')[0].split(':')
@@ -133,10 +133,10 @@ def parse_time(timestring, dst = 0):
         int(year_month_day[2]),
         int(hour_minute[0]),
         int(hour_minute[1]),
-        0, # second not provided
+        0,  # second not provided by API
         -1, # day of week
         -1, # day of year
-        dst # 1 = Yes, 0 = No, -1 = Unknown
+        -1  # 1 = Yes, 0 = No, -1 = Unknown
     ))
 
 def update_time():
