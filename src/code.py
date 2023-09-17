@@ -59,6 +59,10 @@ SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1') # ↑ ↓ ↟ ↡
 
 ########################################################################################################################
 
+# From "Astronomical Algorithms" by Jean Meeus, section 48
+def moon_phase_angle_to_illumination_percentage(phase_angle):
+    return ((1 - math.cos(math.radians(phase_angle))) / 2 ) * 100
+
 def get_utc_offset_from_api():
     try:
         print('Determining UTC offset by IP geolocation')
@@ -239,7 +243,7 @@ class SolarEphemera():
         self.sunset = None
         self.moonset = None
         self.moonrise = None
-        self.age = float(moon_response['properties']['moonphase']) / 180
+        self.moonphase = float(moon_response['properties']['moonphase'])
 
         if 'sunrise' in sun_response['properties']: self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
         if 'sunset' in sun_response['properties']: self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
@@ -376,12 +380,8 @@ while True:
 
         check_buttons()
 
-        moon_frame = int(days[TODAY].age * 100) % 100 # Bitmap 0 to 99
-        # The moon "fills up" to 180 which is full moon, then "drains" to 360 which is new moon
-        if days[TODAY].age < 180:
-            percent = (days[TODAY].age % 180) * 100
-        else:
-            percent = (180 - (days[TODAY].age % 180)) * 100
+        moon_frame = int((days[TODAY].moonphase / 360) * 100) % 100 # Bitmap 0 to 99
+        percent = moon_phase_angle_to_illumination_percentage(days[TODAY].moonphase)
 
         if landscape_orientation:
             MOON_Y = 0         # Moon at the left
@@ -448,5 +448,8 @@ while True:
         display.refresh()
         gc.collect()
 
-        print('Moon Clock - local time is {0} - Version {1} ({2:,} RAM free)'.format(strftime(local_time), VERSION, gc.mem_free()))
-    except Exception as e: log_exception_and_restart('Unexpected exception: {0}'.format(e))
+        print('Moon Clock: Version {1} ({2:,} RAM free) @ {0} [frame: {3}, illum %: {4:.2f}, phase°: {5}]'
+            .format(strftime(local_time), VERSION, gc.mem_free(), moon_frame, percent, days[TODAY].moonphase))
+    except Exception as e:
+        print(e)
+        log_exception_and_restart('Unexpected exception: {0}'.format(e))
