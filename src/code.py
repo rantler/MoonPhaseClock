@@ -73,24 +73,25 @@ def get_utc_offset_from_api():
         print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
     return utc_offset
 
-def get_time_from_esp():
+def get_timestamp_from_esp32_wifi():
     # Often the get_time function just fails for a while, so you have call it again and again 🤷‍♂️
-    times = 30
+    retries = 30
     esp_time = 0
-    while times > 0 and esp_time == 0:
+    while retries > 0 and esp_time == 0:
         time.sleep(1)
         try:
             esp_time = esp.get_time()
             if esp_time == 0:
                 print('o', end = '')
-                times -= 1
+                retries -= 1
         except Exception as e:
             print('x', end = '')
-            times -= 1
-    if times != 10: print('')
+            retries -= 1
     if esp_time != 0:
+        print('')
         return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
     else:
+        print(' FAILED!')
         return None
 
 def forced_asleep(): return nvm[0] == 1
@@ -140,7 +141,7 @@ def parse_time(timestring, dst = 0):
     ))
 
 def update_time():
-    time_struct = get_time_from_esp()
+    time_struct = get_timestamp_from_esp32_wifi()
     if time_struct != None:
         RTC().datetime = time_struct
         return time_struct
@@ -265,7 +266,7 @@ nvm[0:1] = bytes([0])
 # Setup LED matrix, orientation, and display groups
 display = Matrix(bit_depth = BIT_DEPTH).display
 accelerometer = LIS3DH_I2C(busio.I2C(board.SCL, board.SDA), address = 0x19)
-accelerometer.acceleration # Dummy read to clear any existing data
+accelerometer.acceleration # Dummy read to clear any existing data - really necessary? 🤷‍♂️
 time.sleep(0.1)
 display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
 landscape_orientation = display.rotation in (0, 180)
@@ -280,8 +281,8 @@ try:
 except Exception as e:
     print('Error loading image(s): {0}'.format(e))
     clock_face.append(Label(SMALL_FONT, color = 0xFF0000, text = 'ERROR!'))
-    clock_face[0].x = (display.width - clock_face[0].bounding_box[2] + 1) // 2 # Integer division
-    clock_face[0].y = display.height // 2 - 1 # Integer division
+    clock_face[0].x = (display.width - clock_face[0].bounding_box[2] + 1) // 2 # `//` is Integer division
+    clock_face[0].y = display.height // 2 - 1
 
 # Show splash screen while continuing to boot up
 display.show(clock_face)
@@ -315,9 +316,9 @@ esp32_reset = DigitalInOut(board.ESP_RESET)
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
-wifi.connect() # Logs "Connecting to AP ...""
+wifi.connect() # Logs "Connecting to AP"
 
-# Watchdog resets the board whenever a request times out or some other delay occurs
+# Watchdog resets the board whenever a request times out or some other runtime delay occurs
 watchdog.timeout = WATCHDOG_TIMEOUT
 watchdog.mode = WatchDogMode.RESET
 
@@ -331,8 +332,8 @@ get_utc_offset()
 get_lat_long()
 
 try:
-    datetime = update_time()
     print('Setting initial clock time. UTC offset is {0}'.format(utc_offset))
+    datetime = update_time()
 except Exception as e: log_exception_and_restart('Error setting initial clock time: {0}'.format(e))
 
 days = [
