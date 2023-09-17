@@ -1,5 +1,5 @@
-import storage
-storage.remount("/", readonly = False)
+# import storage
+# storage.remount("/", readonly = False)
 # storage.getmount("/").label = "M4_CLOCK"
 # storage.remount("/", readonly = False)
 
