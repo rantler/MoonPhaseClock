@@ -1,7 +1,7 @@
 import gc
 
-VERSION = '1.6.4.5'
-print('Moon Clock - Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
+VERSION = '1.6.5.4'
+print('Moon Clock: Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
 import math
@@ -245,6 +245,7 @@ class SolarEphemera():
         self.moonset = None
         self.moonrise = None
         self.moonphase = float(moon_response['properties']['moonphase'])
+        self.datetime = datetime
 
         if 'sunrise' in sun_response['properties']: self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
         if 'sunset' in sun_response['properties']: self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
@@ -357,15 +358,16 @@ while True:
             if local_time.tm_hour >= secrets['wake_hour'] and asleep and not forced_asleep():
                 print("\nCurrent hour is {0} and wake_hour is {1}. Waking up...".format(local_time.tm_hour, secrets['wake_hour']))
                 wake()
-                # Refetch this every day upon wake since DST changes at around 2:00 AM local time
-                get_utc_offset()
-                datetime = update_time()
-                # Regenerate the SolarEphemera to update moon phase and rise/set times
-                days = [
-                    SolarEphemera(datetime),
-                    SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
-                ]
-                datetime = update_time()
+
+        # When we've transitioned to tomorrow, refetch ephemera, and DST (which changes over at around 2:00 AM)
+        if local_time.tm_mday == days[TOMORROW].datetime.tm_mday:
+            get_utc_offset()
+            datetime = update_time()
+            days = [
+                SolarEphemera(datetime),
+                SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
+            ]
+            datetime = update_time()
 
         next_refresh_time = time.time() + REFRESH_DELAY
         while(time.time() < next_refresh_time): check_buttons()
