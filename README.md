@@ -54,9 +54,9 @@ the in order for the clock to function correctly:
 The following _optional_ properties can sometimes be helpful to set manually are shown below. If any of these properties
 are not present in the `secrets.py` file, they will be looked up dynamically as needed.
 
-* `sleep_hour` - An integer value representing the hour at which the clock should sleep
-* `wake_hour` - An integer value representing the hour at which the clock should awake
-  * _Both `sleep_hour` and `wake_hour` must be present in order to take effect_
+* `sleep_time` - An string value representing the hour and minute at which the clock should sleep, e.g. '23:59'
+* `wake_time` - An string value representing the hour and minute at which the clock should awake, e.g. '06:00'
+  * _Both `sleep_time` and `wake_time` must be present in order to take effect_
 * `latitude` - A floating point value representing your location, i.e. 47.57
 * `longitude` - A floating point value representing your location, i.e. -122.38
 * `utc_offset` - A string value representing the difference from GMT / UTC in your timezone, i.e. '-08:00' in PST
@@ -150,7 +150,7 @@ convert splash-portrait.bmp -depth 8 -resize 64x32 temp.bmp; mv temp.bmp splash-
 In order to reduce the brightness of the display at night, the sleeping image is extremely dark and may appear totally
 black on your computer display depending on your settings. The gamma level of the LED panel is extremely high, so even
 very dark colors can appear bright. You can change the hours during which the display sleeps with in the `settings.py`,
-or disable sleep mode entirely by omitting either the `sleep_hour` or `wake_hour` values.
+or disable sleep mode entirely by omitting either the `sleep_time` or `wake_time` values.
 
 > Note: Fine adjustment of the global brightness of the LED panel is not possible without the use of some kind of PWM
 > library, which at the time of this writing does not exist for the Matrix Portal M4 board.

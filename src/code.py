@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.6.1'
+VERSION = '1.6.6.7'
 print('Moon Clock: Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -56,6 +56,12 @@ SYMBOL_FONT = bitmap_font.load_font('/fonts/6x10.bdf')
 LARGE_FONT.load_glyphs('0123456789:')
 SMALL_FONT.load_glyphs('0123456789:/.%')
 SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1') # ↑ ↓ ↟ ↡
+
+current_event = NUM_EVENTS
+asleep = False
+latitude = None
+longitude = None
+utc_offset = None
 
 ########################################################################################################################
 
@@ -113,6 +119,20 @@ def wake(forced = False):
         asleep = False
         datetime = update_time()
     if forced: nvm[0:1] = bytes([0])
+
+def sleep_or_wake():
+    global asleep
+    local_time = time.localtime()
+    time_to_sleep = time.struct_time((local_time.tm_year, local_time.tm_mon, local_time.tm_mday, int(secrets['sleep_time'].split(':')[0]), int(secrets['sleep_time'].split(':')[1]), 0, -1, -1, -1))
+    time_to_wake = time.struct_time((local_time.tm_year, local_time.tm_mon, local_time.tm_mday, int(secrets['wake_time'].split(':')[0]), int(secrets['wake_time'].split(':')[1]), 0, -1, -1, -1))
+
+    sleepy_time = time_to_sleep < time.localtime() < time_to_wake
+    if not asleep and sleepy_time:
+        print("Current time is {0} and sleep_time is {1}. Going to sleep...".format(hh_mm(local_time), hh_mm(time_to_sleep)))
+        sleep()
+    elif asleep and not sleepy_time:
+        print("\nCurrent time is {0} and wake_time is {1}. Waking up...".format(hh_mm(local_time), hh_mm(time_to_wake)))
+        wake()
 
 def check_buttons():
     if not pin_down.value: # negating to indicate button pressed because Pull.UP 😵
@@ -248,8 +268,9 @@ class SolarEphemera():
             sun_response = json.loads(wifi.fetch_data(sun_url))
             watchdog.feed()
         except Exception as e:
+            print('Request failed. Trying again...')
             watchdog.feed()
-            sleep(3)
+            time.sleep(3)
             sun_response = json.loads(wifi.fetch_data(sun_url))
             watchdog.feed()
 
@@ -259,8 +280,9 @@ class SolarEphemera():
             moon_response = json.loads(wifi.fetch_data(moon_url))
             watchdog.feed()
         except Exception as e:
+            print('Request failed. Trying again...')
             watchdog.feed()
-            sleep(3)
+            time.sleep(3)
             moon_response = json.loads(wifi.fetch_data(moon_url))
             watchdog.feed()
 
@@ -273,12 +295,20 @@ class SolarEphemera():
 
         if 'sunrise' in sun_response['properties'] and sun_response['properties']['sunrise']['time'] != None:
             self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
+        else:
+            print('Bad API response - missing sunrise property')
         if 'sunset' in sun_response['properties'] and sun_response['properties']['sunset']['time'] != None:
             self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
+        else:
+            print('Bad API response - missing sunset property')
         if 'moonrise' in moon_response['properties'] and moon_response['properties']['moonrise']['time'] != None:
             self.moonrise = time.mktime(parse_time(moon_response['properties']['moonrise']['time']))
+        else:
+            print('Bad API response - missing moonrise property')
         if 'moonset' in moon_response['properties'] and moon_response['properties']['moonset']['time'] != None:
             self.moonset = time.mktime(parse_time(moon_response['properties']['moonset']['time']))
+        else:
+            print('Bad API response - missing moonset property')
         return
 
 ########################################################################################################################
@@ -351,12 +381,6 @@ wifi.connect() # Logs "Connecting to AP"
 watchdog.timeout = WATCHDOG_TIMEOUT
 watchdog.mode = WatchDogMode.RESET
 
-current_event = NUM_EVENTS
-asleep = False
-latitude = None
-longitude = None
-utc_offset = None
-
 get_utc_offset()
 get_lat_long()
 
@@ -380,13 +404,7 @@ while True:
     try:
         local_time = time.localtime()
 
-        if secrets['sleep_hour'] != None and secrets['wake_hour'] != None:
-            if local_time.tm_hour >= secrets['sleep_hour'] and local_time.tm_hour < secrets['wake_hour'] and not asleep:
-                print("Current hour is {0} and sleep_hour is {1}. Going to sleep...".format(local_time.tm_hour, secrets['sleep_hour']))
-                sleep()
-            if local_time.tm_hour >= secrets['wake_hour'] and asleep and not forced_asleep():
-                print("\nCurrent hour is {0} and wake_hour is {1}. Waking up...".format(local_time.tm_hour, secrets['wake_hour']))
-                wake()
+        if secrets['sleep_time'] != None and secrets['wake_time'] != None: sleep_or_wake()
 
         # When we've transitioned to tomorrow, refetch ephemera, and DST (which changes over at around 2:00 AM)
         if local_time.tm_mday == days[TOMORROW].datetime.tm_mday:
