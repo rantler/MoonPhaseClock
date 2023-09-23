@@ -247,7 +247,7 @@ class SolarEphemera():
             watchdog.feed()
             sun_response = json.loads(wifi.fetch_data(sun_url))
             watchdog.feed()
-        except HttpError as e:
+        except Exception as e:
             watchdog.feed()
             sleep(3)
             sun_response = json.loads(wifi.fetch_data(sun_url))
@@ -258,7 +258,7 @@ class SolarEphemera():
             watchdog.feed()
             moon_response = json.loads(wifi.fetch_data(moon_url))
             watchdog.feed()
-        except HttpError as e:
+        except Exception as e:
             watchdog.feed()
             sleep(3)
             moon_response = json.loads(wifi.fetch_data(moon_url))
