@@ -123,9 +123,16 @@ def check_buttons():
         wake(forced = True)
 
 def parse_time(timestring):
-    date_time = timestring.split('T')
-    year_month_day = date_time[0].split('-')
-    hour_minute = date_time[1].split('+')[0].split('-')[0].split(':')
+    if timestring == None:
+        return None
+
+    try:
+        date_time = timestring.split('T')
+        year_month_day = date_time[0].split('-')
+        hour_minute = date_time[1].split('+')[0].split('-')[0].split(':')
+    except Exception as e:
+        print("Exception parsing timestring: {0} - {1}".format(timestring, e))
+        return None
 
     return time.struct_time(( # Note: Extra parenthesis are needed because struct_time() now takes a tuple
         int(year_month_day[0]),
@@ -162,6 +169,9 @@ def strftime(time_struct):
         utc_offset)
 
 def display_event(name, event, icon):
+    if event == None:
+        return
+
     time_struct = time.localtime(event)
 
     if name.startswith('Sun'):
