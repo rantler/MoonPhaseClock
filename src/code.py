@@ -75,7 +75,7 @@ def get_utc_offset_from_api():
 
 def get_timestamp_from_esp32_wifi():
     # Often the get_time function just fails for a while, so you have call it again and again 🤷‍♂️
-    retries = 30
+    retries = 50
     esp_time = 0
     while retries > 0 and esp_time == 0:
         time.sleep(1)
