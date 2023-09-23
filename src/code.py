@@ -233,12 +233,27 @@ class SolarEphemera():
             utc_offset)
 
         print('Fetching daily sun event data via: ' + sun_url)
+        try:
+            watchdog.feed()
+            sun_response = json.loads(wifi.fetch_data(sun_url))
+            watchdog.feed()
+        except HttpError as e:
+            watchdog.feed()
+            sleep(3)
+            sun_response = json.loads(wifi.fetch_data(sun_url))
+            watchdog.feed()
+
         print('Fetching daily moon event data via: ' + moon_url)
-        watchdog.feed()
-        sun_response = json.loads(wifi.fetch_data(sun_url))
-        watchdog.feed()
-        moon_response = json.loads(wifi.fetch_data(moon_url))
-        watchdog.feed()
+        try:
+            watchdog.feed()
+            moon_response = json.loads(wifi.fetch_data(moon_url))
+            watchdog.feed()
+        except HttpError as e:
+            watchdog.feed()
+            sleep(3)
+            moon_response = json.loads(wifi.fetch_data(moon_url))
+            watchdog.feed()
+
         self.sunrise = None
         self.sunset = None
         self.moonset = None
@@ -246,10 +261,14 @@ class SolarEphemera():
         self.moonphase = float(moon_response['properties']['moonphase'])
         self.datetime = datetime
 
-        if 'sunrise' in sun_response['properties']: self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
-        if 'sunset' in sun_response['properties']: self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
-        if 'moonrise' in moon_response['properties']: self.moonrise = time.mktime(parse_time(moon_response['properties']['moonrise']['time']))
-        if 'moonset' in moon_response['properties']: self.moonset = time.mktime(parse_time(moon_response['properties']['moonset']['time']))
+        if 'sunrise' in sun_response['properties'] and sun_response['properties']['sunrise']['time'] != None:
+            self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
+        if 'sunset' in sun_response['properties'] and sun_response['properties']['sunset']['time'] != None:
+            self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
+        if 'moonrise' in moon_response['properties'] and moon_response['properties']['moonrise']['time'] != None:
+            self.moonrise = time.mktime(parse_time(moon_response['properties']['moonrise']['time']))
+        if 'moonset' in moon_response['properties'] and moon_response['properties']['moonset']['time'] != None:
+            self.moonset = time.mktime(parse_time(moon_response['properties']['moonset']['time']))
         return
 
 ########################################################################################################################
