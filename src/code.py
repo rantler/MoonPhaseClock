@@ -1,7 +1,7 @@
 import gc
 
 VERSION = '1.6.7.0'
-print('Moon Clock: Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
+print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
 import math
@@ -35,7 +35,7 @@ print('Imports loaded - ({0:,} RAM free)'.format(gc.mem_free()))
 
 # NOTE: Do _not_ call watchdog.feed() too quickly or the board will crash 🤦‍♂️
 WATCHDOG_TIMEOUT = 12   # This is close to the maximum allowed value
-REFRESH_DELAY = 5
+REFRESH_DELAY = 3
 BIT_DEPTH = 6
 TODAY = 0
 TOMORROW = 1
