@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.6.7'
+VERSION = '1.6.7.0'
 print('Moon Clock: Version {0} ({1:,} RAM free)'.format(VERSION, gc.mem_free()))
 
 import json
@@ -31,8 +31,11 @@ from secrets import secrets
 
 print('Imports loaded - ({0:,} RAM free)'.format(gc.mem_free()))
 
+########################################################################################################################
+
+# NOTE: Do _not_ call watchdog.feed() too quickly or the board will crash 🤦‍♂️
 WATCHDOG_TIMEOUT = 12   # This is close to the maximum allowed value
-REFRESH_DELAY = 10      # This cannot exceed WATCHDOG_TIMEOUT
+REFRESH_DELAY = 5
 BIT_DEPTH = 6
 TODAY = 0
 TOMORROW = 1
@@ -57,6 +60,16 @@ LARGE_FONT.load_glyphs('0123456789:')
 SMALL_FONT.load_glyphs('0123456789:/.%')
 SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1') # ↑ ↓ ↟ ↡
 
+# NOTE! These values correspond to the _order_ of the clock_face.append() calls below. See comments there
+CLOCK_MOON_PHASE = 5
+CLOCK_TIME = 6
+CLOCK_DATE = 7
+# Element 8 is a symbol indicating next rise or set - Color is overridden by event colors
+CLOCK_GLYPH = 8
+# Element 9 is the time of (or time to) next rise/set event - Color is overridden by event colors
+CLOCK_EVENT = 9
+CLOCK_DATE = 10
+
 current_event = NUM_EVENTS
 asleep = False
 latitude = None
@@ -71,13 +84,15 @@ def moon_phase_angle_to_illumination_percentage(phase_angle):
 
 def get_utc_offset_from_api():
     try:
-        print('Determining UTC offset by IP geolocation')
         watchdog.feed()
-        dst, utc_offset = wifi.fetch_data('http://worldtimeapi.org/api/ip', json_path = [['dst'], ['utc_offset']])
+        utc_url = 'http://worldtimeapi.org/api/ip'
+        print('Determining UTC offset by IP geolocation via: {0}'.format(utc_url))
+        dst, _utc_offset = wifi.fetch_data(utc_url, json_path = [['dst'], ['utc_offset']])
+        print('DST = {0}, UTC offset = {1}'.format(dst, _utc_offset))
         watchdog.feed()
     except Exception as e:
         print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
-    return utc_offset
+    return _utc_offset
 
 def get_timestamp_from_esp32_wifi():
     # Often the get_time function just fails for a while, so you have call it again and again 🤷‍♂️
@@ -128,8 +143,8 @@ def sleep_or_wake():
 
     sleepy_time = time_to_sleep < time.localtime() < time_to_wake
     if not asleep and sleepy_time:
-        print("Current time is {0} and sleep_time is {1}. Going to sleep...".format(hh_mm(local_time), hh_mm(time_to_sleep)))
-        sleep()
+        print('Current time is {0} and sleep_time is {1}. Going to sleep...'.format(hh_mm(local_time), hh_mm(time_to_sleep)))
+        sleep() # Prints '...' until wake
     elif asleep and not sleepy_time:
         print("\nCurrent time is {0} and wake_time is {1}. Waking up...".format(hh_mm(local_time), hh_mm(time_to_wake)))
         wake()
@@ -151,7 +166,7 @@ def parse_time(timestring):
         year_month_day = date_time[0].split('-')
         hour_minute = date_time[1].split('+')[0].split('-')[0].split(':')
     except Exception as e:
-        print("Exception parsing timestring: {0} - {1}".format(timestring, e))
+        print('Exception parsing timestring: {0} - {1}'.format(timestring, e))
         return None
 
     return time.struct_time(( # Note: Extra parenthesis are needed because struct_time() now takes a tuple
@@ -264,7 +279,6 @@ class SolarEphemera():
 
         print('Fetching daily sun event data via: ' + sun_url)
         try:
-            watchdog.feed()
             sun_response = json.loads(wifi.fetch_data(sun_url))
             watchdog.feed()
         except Exception as e:
@@ -272,11 +286,9 @@ class SolarEphemera():
             watchdog.feed()
             time.sleep(3)
             sun_response = json.loads(wifi.fetch_data(sun_url))
-            watchdog.feed()
 
         print('Fetching daily moon event data via: ' + moon_url)
         try:
-            watchdog.feed()
             moon_response = json.loads(wifi.fetch_data(moon_url))
             watchdog.feed()
         except Exception as e:
@@ -284,7 +296,6 @@ class SolarEphemera():
             watchdog.feed()
             time.sleep(3)
             moon_response = json.loads(wifi.fetch_data(moon_url))
-            watchdog.feed()
 
         self.sunrise = None
         self.sunset = None
@@ -332,6 +343,10 @@ landscape_orientation = display.rotation in (0, 180)
 clock_face = displayio.Group()
 snoozing = displayio.Group()
 
+########################################################################################################################
+# Append each element to the clock_face display group. They are numbered according to "append order", so take care...
+########################################################################################################################
+
 # Element 0 is the splash screen image (1 of 2), later replaced with the moon phase image and clock face.
 try:
     splash_screen_image = 'splash-landscape.bmp' if landscape_orientation else 'splash-portrait.bmp'
@@ -347,25 +362,16 @@ except Exception as e:
 display.show(clock_face)
 display.refresh()
 
-# Append each element to the clock_face display group. They are numbered according to "append order", so take care...
-
 # Elements 1-4 are a black outline around the moon percentage with text labels offset by 1 pixel. Initial text
 # value must be long enough for longest anticipated string later since the bounding box is calculated here.
 for i in range(4): clock_face.append(Label(SMALL_FONT, color = 0, text = '99.9%', y = -99))
 
-CLOCK_MOON_PHASE = 5
+# See CLOCK_MOON_PHASE and other constants defined above that correspond to the order of these clock_face.append calls.
 clock_face.append(Label(SMALL_FONT, color = MOON_PHASE_COLOR, text = '99.9%', y = -99))
-CLOCK_TIME = 6
 clock_face.append(Label(LARGE_FONT, color = TIME_COLOR, text = '24:59', y = -99))
-CLOCK_DATE = 7
 clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12/31', y = -99))
-# Element 8 is a symbol indicating next rise or set - Color is overridden by event colors
-CLOCK_GLYPH = 8
 clock_face.append(Label(SYMBOL_FONT, color = 0x00FF00, text = 'x', y = -99))
-# Element 9 is the time of (or time to) next rise/set event - Color is overridden by event colors
-CLOCK_EVENT = 9
 clock_face.append(Label(SMALL_FONT, color = 0x00FF00, text = '24:59', y = -99))
-CLOCK_DATE = 10
 clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12', y = -99))
 
 # Setup and connect to WiFi access point
@@ -377,10 +383,11 @@ esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
 wifi.connect() # Logs "Connecting to AP"
 
-# Watchdog resets the board whenever a request times out or some other runtime delay occurs
+# Setup watchdog to reset the board whenever a request times out or some other runtime delay or exception occurs
 watchdog.timeout = WATCHDOG_TIMEOUT
 watchdog.mode = WatchDogMode.RESET
 
+# Get UTC and Lat/Lon values if they are not found in secrets.py
 get_utc_offset()
 get_lat_long()
 
@@ -398,10 +405,10 @@ days = [
 ########################################################################################################################
 
 while True:
-    watchdog.feed()
-    display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
-    landscape_orientation = display.rotation in (0, 180)
     try:
+        display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
+        landscape_orientation = display.rotation in (0, 180)
+        watchdog.feed()
         local_time = time.localtime()
 
         if secrets['sleep_time'] != None and secrets['wake_time'] != None: sleep_or_wake()
@@ -417,7 +424,10 @@ while True:
             datetime = update_time()
 
         next_refresh_time = time.time() + REFRESH_DELAY
-        while(time.time() < next_refresh_time): check_buttons()
+        while(time.time() < next_refresh_time):
+            watchdog.feed()
+            check_buttons()
+            time.sleep(1)
 
         if asleep:
             print('.', end = '')
