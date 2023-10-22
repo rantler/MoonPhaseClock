@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.7.0'
+VERSION = '1.6.7.4'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
