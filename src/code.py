@@ -203,27 +203,30 @@ def strftime(time_struct):
         utc_offset)
 
 def display_event(name, event, icon):
-    if event == None:
-        return
-
-    time_struct = time.localtime(event)
+    if event != None:
+        time_struct = time.localtime(event)
 
     if name.startswith('Sun'):
         EVENT_COLOR = clock_face[CLOCK_EVENT].color = SUN_EVENT_COLOR
-        hour = 12 if time_struct.tm_hour == 0 else time_struct.tm_hour
-        event_time = '{0}:{1:0>2}'.format(hour, time_struct.tm_min)
+        if event != None:
+            hour = 12 if time_struct.tm_hour == 0 else time_struct.tm_hour
+            event_time = '{0}:{1:0>2}'.format(hour, time_struct.tm_min)
     else:
         EVENT_COLOR = clock_face[CLOCK_EVENT].color = MOON_EVENT_COLOR
-        event_time = '{0}:{1:0>2}'.format(time_struct.tm_hour, time_struct.tm_min)
-
-    clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color = EVENT_COLOR, text = event_time, y = EVENT_Y)
-    clock_face[CLOCK_EVENT].x = max(CLOCK_GLYPH_X + 6, CENTER_X - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
-    clock_face[CLOCK_EVENT].y = EVENT_Y
+        if event != None:
+            event_time = '{0}:{1:0>2}'.format(time_struct.tm_hour, time_struct.tm_min)
 
     clock_face[CLOCK_GLYPH].color = EVENT_COLOR
     clock_face[CLOCK_GLYPH].text = icon
     clock_face[CLOCK_GLYPH].y = EVENT_Y - 2
     clock_face[CLOCK_GLYPH].x = CLOCK_GLYPH_X
+
+    if event == None:
+        event_time = '??:??'
+
+    clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color = EVENT_COLOR, text = event_time, y = EVENT_Y)
+    clock_face[CLOCK_EVENT].x = max(CLOCK_GLYPH_X + 6, CENTER_X - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
+    clock_face[CLOCK_EVENT].y = EVENT_Y
 
 def log_exception_and_restart(e):
     msg = "{0}: [VERSION {1}] (RAM {2:,}) - {3}\n".format(strftime(time.localtime()), VERSION, gc.mem_free(), e)
