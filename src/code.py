@@ -84,19 +84,18 @@ def moon_phase_angle_to_illumination_percentage(phase_angle):
 
 def get_utc_offset_from_api():
     try:
-        watchdog.feed()
         utc_url = 'http://worldtimeapi.org/api/ip'
         print('Determining UTC offset by IP geolocation via: {0}'.format(utc_url))
         dst, _utc_offset = wifi.fetch_data(utc_url, json_path = [['dst'], ['utc_offset']])
         print('DST = {0}, UTC offset = {1}'.format(dst, _utc_offset))
-        watchdog.feed()
     except Exception as e:
         print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
+        reload() # Reboot / restart
     return _utc_offset
 
 def get_timestamp_from_esp32_wifi():
     # Often the get_time function just fails for a while, so you have call it again and again 🤷‍♂️
-    retries = 50
+    retries = 100
     esp_time = 0
     while retries > 0 and esp_time == 0:
         time.sleep(1)
@@ -280,20 +279,16 @@ class SolarEphemera():
         print('Fetching daily sun event data via: ' + sun_url)
         try:
             sun_response = json.loads(wifi.fetch_data(sun_url))
-            watchdog.feed()
         except Exception as e:
             print('Request failed. Trying again...')
-            watchdog.feed()
             time.sleep(3)
             sun_response = json.loads(wifi.fetch_data(sun_url))
 
         print('Fetching daily moon event data via: ' + moon_url)
         try:
             moon_response = json.loads(wifi.fetch_data(moon_url))
-            watchdog.feed()
         except Exception as e:
             print('Request failed. Trying again...')
-            watchdog.feed()
             time.sleep(3)
             moon_response = json.loads(wifi.fetch_data(moon_url))
 
@@ -383,10 +378,6 @@ esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
 wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
 wifi.connect() # Logs "Connecting to AP"
 
-# Setup watchdog to reset the board whenever a request times out or some other runtime delay or exception occurs
-watchdog.timeout = WATCHDOG_TIMEOUT
-watchdog.mode = WatchDogMode.RESET
-
 # Get UTC and Lat/Lon values if they are not found in secrets.py
 get_utc_offset()
 get_lat_long()
@@ -401,6 +392,10 @@ days = [
     SolarEphemera(datetime),
     SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
 ]
+
+# Setup watchdog to reset the board whenever a request times out or some other runtime delay or exception occurs
+watchdog.timeout = WATCHDOG_TIMEOUT
+watchdog.mode = WatchDogMode.RESET
 
 ########################################################################################################################
 
