@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.7.4'
+VERSION = '1.6.7.5'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
@@ -218,7 +218,7 @@ def display_event(name, event, icon):
 
     clock_face[CLOCK_GLYPH].color = EVENT_COLOR
     clock_face[CLOCK_GLYPH].text = icon
-    clock_face[CLOCK_GLYPH].y = EVENT_Y - 2
+    clock_face[CLOCK_GLYPH].y = EVENT_Y
     clock_face[CLOCK_GLYPH].x = CLOCK_GLYPH_X
 
     if event == None:
@@ -397,6 +397,9 @@ days = [
 ]
 
 # Setup watchdog to reset the board whenever a request times out or some other runtime delay or exception occurs
+# NOTE: Do not start the watchdog until after the initial network requests have completed because the watchdog seems
+# to interfere with the network requests and causes them to fail 90% of the time even if they would have completed
+# before the watchdog timeout period has elapsed
 watchdog.timeout = WATCHDOG_TIMEOUT
 watchdog.mode = WatchDogMode.RESET
 
