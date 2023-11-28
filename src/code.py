@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.7.6'
+VERSION = '1.6.7.7'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
@@ -222,7 +222,7 @@ def display_event(name, event, icon):
     clock_face[CLOCK_GLYPH].x = CLOCK_GLYPH_X
 
     if event == None:
-        event_time = '??:??'
+        event_time = '--:--'
 
     clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color = EVENT_COLOR, text = event_time, y = EVENT_Y)
     clock_face[CLOCK_EVENT].x = max(CLOCK_GLYPH_X + 6, CENTER_X - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
