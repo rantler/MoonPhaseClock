@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.7.5'
+VERSION = '1.6.7.6'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
@@ -403,6 +403,8 @@ days = [
 watchdog.timeout = WATCHDOG_TIMEOUT
 watchdog.mode = WatchDogMode.RESET
 
+should_update_dst = False
+
 ########################################################################################################################
 
 while True:
@@ -414,15 +416,21 @@ while True:
 
         if secrets['sleep_time'] != None and secrets['wake_time'] != None: sleep_or_wake()
 
-        # When we've transitioned to tomorrow, refetch ephemera, and DST (which changes over at around 2:00 AM)
+        # When we've transitioned to tomorrow, refetch ephemera
+        # Check DST which changes over at around 2:00 AM
         if local_time.tm_mday == days[TOMORROW].datetime.tm_mday:
-            get_utc_offset()
+            should_update_dst = True
             datetime = update_time()
             days = [
                 SolarEphemera(datetime),
                 SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
             ]
             datetime = update_time()
+
+        # Check DST which changes over at around 2:00 AM
+        if local_time.tm_hour == 2 and should_update_dst:
+            get_utc_offset()
+            should_update_dst = False
 
         next_refresh_time = time.time() + REFRESH_DELAY
         while(time.time() < next_refresh_time):
