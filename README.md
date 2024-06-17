@@ -6,6 +6,11 @@ Requires WiFi internet access. Uses IP geolocation if UTC offset and/or lat/lon 
 Written by Phil 'PaintYourDragon' Burgess for Adafruit Industries. MIT license, all text above must be included in any
 redistribution.
 
+## Hardware
+
+[Adafruit Matrix Portal M4](https://www.electromaker.io/shop/product/adafruit-matrix-portal-circuitpython-powered-internet-display?gad_source=1&gclid=Cj0KCQjwvb-zBhCmARIsAAfUI2v5WeSxHObm0jrkqzDvOr_COKdJODjltGUi-nX2PHvUkexRM4M8fNIaAozlEALw_wcB)
+[Adafruit 64x32 RGB LED Matrix](https://www.electromaker.io/shop/product/64x32-rgb-led-matrix-5mm-pitch)
+
 ## Supported buttons
 
 * `UP` button forces the clock to wake
