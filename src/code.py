@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.6.7.7'
+VERSION = '1.8.1.0'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
@@ -75,6 +75,8 @@ asleep = False
 latitude = None
 longitude = None
 utc_offset = None
+esp32_wifi_sync = None
+last_update_sec = None
 
 ########################################################################################################################
 
@@ -82,33 +84,40 @@ utc_offset = None
 def moon_phase_angle_to_illumination_percentage(phase_angle):
     return ((1 - math.cos(math.radians(phase_angle))) / 2 ) * 100
 
-def get_utc_offset_from_api():
-    try:
-        utc_url = 'http://worldtimeapi.org/api/ip'
-        print('Determining UTC offset by IP geolocation via: {0}'.format(utc_url))
-        dst, _utc_offset = wifi.fetch_data(utc_url, json_path = [['dst'], ['utc_offset']])
-        print('DST = {0}, UTC offset = {1}'.format(dst, _utc_offset))
-    except Exception as e:
-        print('Failed to fetch from worldtimeapi.org. Error: {0}'.format(e))
-        reload() # Reboot / restart
-    return _utc_offset
+def parse_utc_offset(offset_str):
+    """
+    Convert a UTC offset string like '-700' or '-07:00' into (hours, minutes)
+    """
+    offset_str = offset_str.strip()
+    if ':' in offset_str:
+        hours_str, minutes_str = offset_str.split(':')
+    else:
+        # e.g., -700 → -7 hours, 0 minutes
+        val = int(offset_str)
+        hours_str = str(val // 100)
+        minutes_str = str(abs(val) % 100)
+    return int(hours_str), int(minutes_str)
 
 def get_timestamp_from_esp32_wifi():
-    # Often the get_time function just fails for a while, so you have call it again and again 🤷‍♂️
+    global esp32_wifi_sync
     retries = 100
-    esp_time = 0
-    while retries > 0 and esp_time == 0:
-        time.sleep(1)
+    esp_time = None
+    if esp32_wifi_sync is None:
+        print('Syncing WiFi with ESP32.', end='')
+    while retries > 0 and not esp_time:
         try:
-            esp_time = esp.get_time()
-            if esp_time == 0:
-                print('.', end = '')
-                retries -= 1
-        except Exception as e:
-            print('!', end = '')
+            esp_time = esp.get_time() # In UTC
+            if not esp_time:
+                raise Exception("No time returned")
+        except Exception:
+            print('.', end='')
+            time.sleep(1)
             retries -= 1
-    if esp_time != 0:
-        return time.localtime(esp_time[0] + int(utc_offset.split(':')[0]) * 3600 + int(utc_offset.split(':')[1]) * 60)
+
+    if esp_time:
+        esp32_wifi_sync = True
+        adjusted = esp_time[0] + (int(utc_offset) // 100) * 3600
+        return time.localtime(adjusted)
     else:
         print(' FAILED!')
         return None
@@ -119,7 +128,8 @@ def forced_asleep(): return nvm[0] == 1
 def sleep(forced = False):
     global asleep
     if not asleep:
-        display.show(snoozing)
+        # CP10: use root_group assignment
+        display.root_group = snoozing
         display.refresh()
         asleep = True
     if forced: nvm[0:1] = bytes([1])
@@ -128,7 +138,8 @@ def sleep(forced = False):
 def wake(forced = False):
     global asleep, datetime
     if asleep:
-        display.show(clock_face)
+        # CP10: use root_group assignment
+        display.root_group = clock_face
         display.refresh()
         asleep = False
         datetime = update_time()
@@ -181,55 +192,93 @@ def parse_time(timestring):
     ))
 
 def update_time():
+    """Sync with ESP32 WiFi and return UTC struct_time"""
     time_struct = get_timestamp_from_esp32_wifi()
-    if time_struct != None:
+    if time_struct is not None:
+        esp32_wifi_sync = True
         RTC().datetime = time_struct
-        return time_struct
+        return time_struct  # Return struct_time, not mktime
     else:
-        return RTC().datetime
+        return RTC().datetime  # Already struct_time
 
 def hh_mm(time_struct):
-    hour = 12 if time_struct.tm_hour % 12 == 0 else time_struct.tm_hour % 12
-    return '{0}:{1:0>2}'.format(hour, time_struct.tm_min)
+    """
+    Return a 12-hour formatted string
+    Example: 2:35
+    """
+
+    hour = (time_struct.tm_hour) % 24
+    minute = (time_struct.tm_min) % 60
+
+    # Adjust hour if minutes overflow
+    if time_struct.tm_min >= 60:
+        hour = (hour + 1) % 24
+
+    # Format as 12-hour clock
+    hour12 = 12 if hour % 12 == 0 else hour % 12
+    sep = ':' if time_struct.tm_sec % 2 == 0 else ' '
+    return "{0}{1}{2:02d}".format(hour12, sep, minute)
 
 def strftime(time_struct):
-    return '{0:0>2}/{1:0>2}/{2:0>2} {3:0>2}:{4:0>2}:{5:0>2} {6}'.format(
-        time_struct.tm_year,
+    """
+    Return a date/time string
+    Format: MM/DD/YYYY HH:MM:SS ±HHMM
+    """
+    hour = (time_struct.tm_hour) % 24
+    minute = (time_struct.tm_min) % 60
+
+    return "{0:0>2}/{1:0>2}/{2:0>4} {3:0>2}:{4:0>2}:{5:0>2} {6}".format(
         time_struct.tm_mon,
         time_struct.tm_mday,
-        time_struct.tm_hour,
-        time_struct.tm_min,
+        time_struct.tm_year,
+        hour,
+        minute,
         time_struct.tm_sec,
-        utc_offset)
+        utc_offset
+    )
 
-def display_event(name, event, icon):
-    if event != None:
+def display_event(name, event, icon, event_y, glyph_x, center_x):
+    """
+    Display a sun/moon event on the clock.
+    event_y: vertical position of the event
+    glyph_x: horizontal position of the icon
+    center_x: horizontal center of the text
+    """
+    if event is not None:
         time_struct = time.localtime(event)
 
     if name.startswith('Sun'):
-        EVENT_COLOR = clock_face[CLOCK_EVENT].color = SUN_EVENT_COLOR
-        if event != None:
+        event_color = SUN_EVENT_COLOR
+        if event is not None:
             hour = 12 if time_struct.tm_hour == 0 else time_struct.tm_hour
-            event_time = '{0}:{1:0>2}'.format(hour, time_struct.tm_min)
+            event_time_str = '{0}:{1:0>2}'.format(hour, time_struct.tm_min)
     else:
-        EVENT_COLOR = clock_face[CLOCK_EVENT].color = MOON_EVENT_COLOR
-        if event != None:
-            event_time = '{0}:{1:0>2}'.format(time_struct.tm_hour, time_struct.tm_min)
+        event_color = MOON_EVENT_COLOR
+        if event is not None:
+            event_time_str = '{0}:{1:0>2}'.format(time_struct.tm_hour, time_struct.tm_min)
 
-    clock_face[CLOCK_GLYPH].color = EVENT_COLOR
+    # Update glyph
+    clock_face[CLOCK_GLYPH].color = event_color
     clock_face[CLOCK_GLYPH].text = icon
-    clock_face[CLOCK_GLYPH].y = EVENT_Y
-    clock_face[CLOCK_GLYPH].x = CLOCK_GLYPH_X
+    clock_face[CLOCK_GLYPH].x = glyph_x
+    clock_face[CLOCK_GLYPH].y = event_y
 
-    if event == None:
-        event_time = '--:--'
+    # If no event, display placeholder
+    if event is None:
+        event_time_str = '--:--'
 
-    clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color = EVENT_COLOR, text = event_time, y = EVENT_Y)
-    clock_face[CLOCK_EVENT].x = max(CLOCK_GLYPH_X + 6, CENTER_X - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
-    clock_face[CLOCK_EVENT].y = EVENT_Y
+    # Update event label
+    clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color=event_color, text=event_time_str)
+    clock_face[CLOCK_EVENT].x = max(glyph_x + 6, center_x - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
+    clock_face[CLOCK_EVENT].y = event_y
 
 def log_exception_and_restart(e):
-    msg = "{0}: [VERSION {1}] (RAM {2:,}) - {3}\n".format(strftime(time.localtime()), VERSION, gc.mem_free(), e)
+    """
+    Logs an exception to a file, then restarts the board.
+    """
+    msg = "{0}: [VERSION {1}] (RAM {2:,}) - {3}\n".format(
+        strftime(time.localtime()), VERSION, gc.mem_free(), e
+    )
     try:
         log = open('exceptions.log', 'a')   # Can fail if filesystem is read-only or full
         log.write(msg)
@@ -257,268 +306,359 @@ def get_utc_offset():
     try:
         utc_offset = secrets['utc_offset']
         print('UTC offset determined from secrets: ' + utc_offset)
-    except: utc_offset = get_utc_offset_from_api()
+    except: utc_offset = "-800"   # Default/fallback (-700 is PDT and -800 PST)
+    return
+
+def format_utc_offset(offset_str):
+    """
+    Convert an offset like '-700', '-07:00', '+530', '+05:30' into standard ±HH:MM
+    """
+    offset_str = offset_str.strip()
+    if ':' in offset_str:
+        if offset_str[0] in '+-':
+            sign = offset_str[0]
+            hours, minutes = offset_str[1:].split(':')
+        else:
+            sign = '+'
+            hours, minutes = offset_str.split(':')
+        return "{}{:02d}:{:02d}".format(sign, int(hours), int(minutes))
+    else:
+        val = int(offset_str)
+        sign = '-' if val < 0 else '+'
+        val = abs(val)
+        hours = val // 100
+        minutes = val % 100
+        return "{}{:02d}:{:02d}".format(sign, hours, minutes)
+
+def fetch_url_with_retry(url, max_retries=3, delay=3):
+    """
+    Fetch a URL via ESP32, retrying up to max_retries times on failure.
+    """
+    attempt = 1
+    while attempt <= max_retries:
+        print("[Attempt {}/{}] Fetching: {}".format(attempt, max_retries, url))
+        try:
+            data = wifi.fetch_data(url)
+            print("Success!")
+            return data
+        except Exception as e:
+            print("Request failed: {}".format(e))
+            if attempt < max_retries:
+                print("Retrying in {}s...".format(delay))
+                time.sleep(delay)
+            else:
+                print("All retries failed.")
+                return None
+        attempt += 1
+
+def tz_hours_from_offset(utc_offset):
+    """
+    Convert a UTC offset string to an integer tz for USNO API.
+    Supports "-07:00", "-0700", "-7", "+05:30" etc.
+    Only hours are returned; minutes are ignored.
+    Valid USNO tz range: -12 <= tz <= 14
+    """
+    utc_offset = utc_offset.replace(":", "")
+    if utc_offset.startswith('-'):
+        sign = -1
+        digits = utc_offset[1:]
+    elif utc_offset.startswith('+'):
+        sign = 1
+        digits = utc_offset[1:]
+    else:
+        sign = 1
+        digits = utc_offset
+
+    if len(digits) >= 3:
+        hours = int(digits[:-2]) * sign
+    else:
+        hours = int(digits) * sign
+
+    if hours < -12 or hours > 14:
+        raise ValueError("tz offset out-of-bounds for USNO API: {}".format(hours))
+
+    return hours
 
 ########################################################################################################################
 
-class SolarEphemera():
-    global latitude, longitude, utc_offset
+class SolarEphemera:
+    global latitude, longitude, utc_offset, phase
+
     def __init__(self, datetime):
-        sun_url = 'https://api.met.no/weatherapi/sunrise/3.0/sun?lat={0}&lon={1}&date={2:0>2}-{3:0>2}-{4:0>2}&offset={5}'.format(
-            latitude,
-            longitude,
-            datetime.tm_year,
-            datetime.tm_mon,
-            datetime.tm_mday,
-            utc_offset)
-        moon_url = 'https://api.met.no/weatherapi/sunrise/3.0/moon?lat={0}&lon={1}&date={2:0>2}-{3:0>2}-{4:0>2}&offset={5}'.format(
-            latitude,
-            longitude,
-            datetime.tm_year,
-            datetime.tm_mon,
-            datetime.tm_mday,
-            utc_offset)
-
-        print('Fetching daily sun event data via: ' + sun_url)
-        try:
-            sun_response = json.loads(wifi.fetch_data(sun_url))
-        except Exception as e:
-            print('Request failed. Trying again...')
-            time.sleep(3)
-            sun_response = json.loads(wifi.fetch_data(sun_url))
-
-        print('Fetching daily moon event data via: ' + moon_url)
-        try:
-            moon_response = json.loads(wifi.fetch_data(moon_url))
-        except Exception as e:
-            print('Request failed. Trying again...')
-            time.sleep(3)
-            moon_response = json.loads(wifi.fetch_data(moon_url))
-
         self.sunrise = None
         self.sunset = None
-        self.moonset = None
         self.moonrise = None
-        self.moonphase = float(moon_response['properties']['moonphase'])
+        self.moonset = None
+        self.moonphase = None
         self.datetime = datetime
+        self.current_phase = "Unknown"
 
-        if 'sunrise' in sun_response['properties'] and sun_response['properties']['sunrise']['time'] != None:
-            self.sunrise = time.mktime(parse_time(sun_response['properties']['sunrise']['time']))
-        else:
-            print('Bad API response - missing sunrise property')
-        if 'sunset' in sun_response['properties'] and sun_response['properties']['sunset']['time'] != None:
-            self.sunset = time.mktime(parse_time(sun_response['properties']['sunset']['time']))
-        else:
-            print('Bad API response - missing sunset property')
-        if 'moonrise' in moon_response['properties'] and moon_response['properties']['moonrise']['time'] != None:
-            self.moonrise = time.mktime(parse_time(moon_response['properties']['moonrise']['time']))
-        else:
-            print('Bad API response - missing moonrise property')
-        if 'moonset' in moon_response['properties'] and moon_response['properties']['moonset']['time'] != None:
-            self.moonset = time.mktime(parse_time(moon_response['properties']['moonset']['time']))
-        else:
-            print('Bad API response - missing moonset property')
+        date_str = "{:04d}-{:02d}-{:02d}".format(datetime.tm_year, datetime.tm_mon, datetime.tm_mday)
+        tz_hours = tz_hours_from_offset(utc_offset)
+        url = "https://aa.usno.navy.mil/api/rstt/oneday?date={}&coords={},{}&tz={}".format(
+            date_str, latitude, longitude, tz_hours
+        )
+
+        # Interesting fields: isdst, curphase
+        print("Fetching daily sun & moon data via USNO AA: {}".format(url))
+        data_str = fetch_url_with_retry(url, max_retries=3, delay=3)
+        if data_str is None:
+            print("Failed to fetch USNO data. Leaving ephemera empty.")
+            return
+
+        try:
+            raw = json.loads(data_str)
+            data = raw['properties']['data']
+        except Exception as e:
+            print("Failed to parse USNO response: {}".format(e))
+            return
+
+        phase = data.get('curphase', '')
+        print("phase = {0}".format(phase))
+        self.current_phase = phase
+        daylight_saving_time = data.get('isdst', False)
+
+        try:
+            fracillum = data.get('fracillum', "0%").strip('%')
+            self.moonphase = float(fracillum)
+        except Exception as e:
+            print("Failed to parse moon phase: {}".format(e))
+            self.moonphase = 0.0
+
+        try:
+            for item in data.get('sundata', []):
+                phen = item.get('phen', '')
+                t = self.parse_usno_time(item.get('time'))
+                if phen == 'Rise':
+                    self.sunrise = t
+                elif phen == 'Set':
+                    self.sunset = t
+        except Exception as e:
+            print("Failed to parse sun events: {}".format(e))
+
+        try:
+            for item in data.get('moondata', []):
+                phen = item.get('phen', '')
+                t = self.parse_usno_time(item.get('time'))
+                if phen == 'Rise':
+                    self.moonrise = t
+                elif phen == 'Set':
+                    self.moonset = t
+        except Exception as e:
+            print("Failed to parse moon events: {}".format(e))
+
+    @staticmethod
+    def parse_usno_time(timestr):
+        if not timestr:
+            return None
+        try:
+            h, m = [int(x) for x in timestr.split(':')]
+            now = time.localtime()
+            t = time.struct_time((
+                now.tm_year, now.tm_mon, now.tm_mday, h, m, 0, -1, -1, -1
+            ))
+            return time.mktime(t)
+        except Exception as e:
+            print("Failed to parse time '{}': {}".format(timestr, e))
+            return None
+
+########################################################################################################################
+
+def update_display(time_only=False):
+    global moon_frame, percent, days, current_event, last_update_sec, phase
+
+    percent = days[TODAY].moonphase
+    phase = days[TODAY].current_phase
+
+    if phase != None:
+        phase_offset = 100 if "Waning" in phase else 50
+    else:
+        phase_offset = 100
+
+    moon_frame = phase_offset - int(days[TODAY].moonphase)
+
+    if landscape_orientation:
+        MOON_Y = 0
+        CENTER_X = 48
+        TIME_Y = 6
+        DATE_Y = 16
+        EVENT_Y = 27
+        CLOCK_GLYPH_X = 30
+    else:
+        MOON_Y = 0
+        CENTER_X = 16
+        TIME_Y = 37
+        DATE_Y = 47
+        EVENT_Y = 57
+        CLOCK_GLYPH_X = 0
+
+    try:
+        bitmap = displayio.OnDiskBitmap('moon/moon{:02d}.bmp'.format(moon_frame))
+        tile_grid = displayio.TileGrid(bitmap, pixel_shader=displayio.ColorConverter())
+        tile_grid.x = 0
+        tile_grid.y = MOON_Y
+        clock_face[0] = tile_grid
+    except Exception as e:
+        print("Error loading bitmap: {}".format(e))
+
+    if time_only:
+        clock_face[CLOCK_TIME].text = hh_mm(local_time)
+        clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
+        clock_face[CLOCK_TIME].y = TIME_Y
+        display.refresh()
         return
+
+    if last_update_sec == local_time.tm_sec:
+        return
+
+    clock_face[CLOCK_MOON_PHASE].text = '100%' if percent >= 99.95 else '{:.1f}%'.format(percent + 0.05)
+    clock_face[CLOCK_MOON_PHASE].x = 16 - clock_face[CLOCK_MOON_PHASE].bounding_box[2] // 2
+    clock_face[CLOCK_MOON_PHASE].y = MOON_Y + 16
+    for i in range(1, 5):
+        clock_face[i].text = clock_face[CLOCK_MOON_PHASE].text
+
+    clock_face[1].x, clock_face[1].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y - 1
+    clock_face[2].x, clock_face[2].y = clock_face[CLOCK_MOON_PHASE].x - 1, clock_face[CLOCK_MOON_PHASE].y
+    clock_face[3].x, clock_face[3].y = clock_face[CLOCK_MOON_PHASE].x + 1, clock_face[CLOCK_MOON_PHASE].y
+    clock_face[4].x, clock_face[4].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y + 1
+
+    event_map = [
+        ('Moonset tomorrow', days[TOMORROW].moonset, TOMORROW_SET),
+        ('Moonrise tomorrow', days[TOMORROW].moonrise, TOMORROW_RISE),
+        ('Sunset tomorrow', days[TOMORROW].sunset, TOMORROW_SET),
+        ('Sunrise tomorrow', days[TOMORROW].sunrise, TOMORROW_RISE),
+        ('Moonset today', days[TODAY].moonset, TODAY_SET),
+        ('Moonrise today', days[TODAY].moonrise, TODAY_RISE),
+        ('Sunset today', days[TODAY].sunset, TODAY_SET),
+        ('Sunrise today', days[TODAY].sunrise, TODAY_RISE)
+    ]
+
+    event_name, event_time, icon = event_map[(NUM_EVENTS - current_event) % NUM_EVENTS]
+    display_event(event_name, event_time, icon, EVENT_Y, CLOCK_GLYPH_X, CENTER_X)
+
+    clock_face[CLOCK_TIME].text = hh_mm(local_time)
+    clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
+    clock_face[CLOCK_TIME].y = TIME_Y
+
+    clock_face[CLOCK_DATE].text = '{0}-{1:02d}'.format(local_time.tm_mon, local_time.tm_mday)
+    clock_face[CLOCK_DATE].x = CENTER_X - clock_face[CLOCK_DATE].bounding_box[2] // 2
+    clock_face[CLOCK_DATE].y = DATE_Y
+
+    display.refresh()
+    last_update_sec = local_time.tm_sec
+
+    current_event = current_event - 1 if current_event > 1 else NUM_EVENTS
 
 ########################################################################################################################
 
 # Setup force sleep and wake buttons
 pin_down = DigitalInOut(board.BUTTON_DOWN)
-pin_down.switch_to_input(pull = Pull.UP) # Pull.DOWN doesn't fucking work!
+pin_down.switch_to_input(pull=Pull.UP)
 pin_up = DigitalInOut(board.BUTTON_UP)
-pin_up.switch_to_input(pull = Pull.UP)
+pin_up.switch_to_input(pull=Pull.UP)
 
-# Turn off forced-sleep when we first boot up
 nvm[0:1] = bytes([0])
 
-# Setup LED matrix, orientation, and display groups
-display = Matrix(bit_depth = BIT_DEPTH).display
-accelerometer = LIS3DH_I2C(busio.I2C(board.SCL, board.SDA), address = 0x19)
-accelerometer.acceleration # Dummy read to clear any existing data - really necessary? 🤷‍♂️
+display = Matrix(bit_depth=BIT_DEPTH).display
+accelerometer = LIS3DH_I2C(busio.I2C(board.SCL, board.SDA), address=0x19)
+accelerometer.acceleration
 time.sleep(0.1)
 display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
 landscape_orientation = display.rotation in (0, 180)
 clock_face = displayio.Group()
 snoozing = displayio.Group()
 
-########################################################################################################################
-# Append each element to the clock_face display group. They are numbered according to "append order", so take care...
-########################################################################################################################
-
-# Element 0 is the splash screen image (1 of 2), later replaced with the moon phase image and clock face.
+# Append elements to clock_face
 try:
     splash_screen_image = 'splash-landscape.bmp' if landscape_orientation else 'splash-portrait.bmp'
-    clock_face.append(displayio.TileGrid(displayio.OnDiskBitmap(open(splash_screen_image, 'rb')), pixel_shader = displayio.ColorConverter()))
-    snoozing.append(displayio.TileGrid(displayio.OnDiskBitmap(open('sleeping.bmp', 'rb')), pixel_shader = displayio.ColorConverter()))
+    clock_face.append(displayio.TileGrid(displayio.OnDiskBitmap(splash_screen_image), pixel_shader=displayio.ColorConverter()))
+    snoozing.append(displayio.TileGrid(displayio.OnDiskBitmap('sleeping.bmp'), pixel_shader=displayio.ColorConverter()))
 except Exception as e:
-    print('Error loading image(s): {0}'.format(e))
-    clock_face.append(Label(SMALL_FONT, color = 0xFF0000, text = 'ERROR!'))
-    clock_face[0].x = (display.width - clock_face[0].bounding_box[2] + 1) // 2 # `//` is Integer division
+    print("Error loading image(s): {}".format(e))
+    clock_face.append(Label(SMALL_FONT, color=0xFF0000, text='ERROR!'))
+    clock_face[0].x = (display.width - clock_face[0].bounding_box[2] + 1) // 2
     clock_face[0].y = display.height // 2 - 1
 
-# Show splash screen while continuing to boot up
-display.show(clock_face)
+display.root_group = clock_face
 display.refresh()
 
-# Elements 1-4 are a black outline around the moon percentage with text labels offset by 1 pixel. Initial text
-# value must be long enough for longest anticipated string later since the bounding box is calculated here.
-for i in range(4): clock_face.append(Label(SMALL_FONT, color = 0, text = '99.9%', y = -99))
+for i in range(4): clock_face.append(Label(SMALL_FONT, color=0, text='99.9%', y=-99))
+clock_face.append(Label(SMALL_FONT, color=MOON_PHASE_COLOR, text='99.9%', y=-99))
+clock_face.append(Label(LARGE_FONT, color=TIME_COLOR, text='24:59', y=-99))
+clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12/31', y=-99))
+clock_face.append(Label(SYMBOL_FONT, color=0x00FF00, text='x', y=-99))
+clock_face.append(Label(SMALL_FONT, color=0x00FF00, text='24:59', y=-99))
+clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12', y=-99))
 
-# See CLOCK_MOON_PHASE and other constants defined above that correspond to the order of these clock_face.append calls.
-clock_face.append(Label(SMALL_FONT, color = MOON_PHASE_COLOR, text = '99.9%', y = -99))
-clock_face.append(Label(LARGE_FONT, color = TIME_COLOR, text = '24:59', y = -99))
-clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12/31', y = -99))
-clock_face.append(Label(SYMBOL_FONT, color = 0x00FF00, text = 'x', y = -99))
-clock_face.append(Label(SMALL_FONT, color = 0x00FF00, text = '24:59', y = -99))
-clock_face.append(Label(SMALL_FONT, color = DATE_COLOR, text = '12', y = -99))
-
-# Setup and connect to WiFi access point
 esp32_cs = DigitalInOut(board.ESP_CS)
 esp32_ready = DigitalInOut(board.ESP_BUSY)
 esp32_reset = DigitalInOut(board.ESP_RESET)
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready, esp32_reset)
-wifi = Network(status_neopixel = board.NEOPIXEL, esp = esp, external_spi = spi, debug = False)
-wifi.connect() # Logs "Connecting to AP"
+wifi = Network(status_neopixel=board.NEOPIXEL, esp=esp, external_spi=spi, debug=False)
+wifi.connect()
 
-# Get UTC and Lat/Lon values if they are not found in secrets.py
 get_utc_offset()
 get_lat_long()
 
-try:
-    print('Setting initial clock time. UTC offset is {0}'.format(utc_offset))
-    datetime = update_time()
-    print('')
-except Exception as e: log_exception_and_restart('Error setting initial clock time: {0}'.format(e))
+print("Setting initial clock time. UTC offset is {}".format(utc_offset))
+datetime = update_time()
+print('today = %{0}'.format(datetime))
+print("tomorrow = %{0}".format(time.localtime(time.mktime(datetime) + 86400)))
 
 days = [
     SolarEphemera(datetime),
     SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
 ]
 
-# Setup watchdog to reset the board whenever a request times out or some other runtime delay or exception occurs
-# NOTE: Do not start the watchdog until after the initial network requests have completed because the watchdog seems
-# to interfere with the network requests and causes them to fail 90% of the time even if they would have completed
-# before the watchdog timeout period has elapsed
 watchdog.timeout = WATCHDOG_TIMEOUT
 watchdog.mode = WatchDogMode.RESET
-
 should_update_dst = False
 
 ########################################################################################################################
 
 while True:
-    try:
-        display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
-        landscape_orientation = display.rotation in (0, 180)
-        watchdog.feed()
-        local_time = time.localtime()
+    display.rotation = (int(((math.atan2(-accelerometer.acceleration.y, -accelerometer.acceleration.x) + math.pi) / (math.pi * 2) + 0.875) * 4) % 4) * 90
+    landscape_orientation = display.rotation in (0, 180)
+    watchdog.feed()
+    local_time = time.localtime()
 
-        if secrets['sleep_time'] != None and secrets['wake_time'] != None: sleep_or_wake()
+    if secrets['sleep_time'] != None and secrets['wake_time'] != None: sleep_or_wake()
 
-        # When we've transitioned to tomorrow, refetch ephemera
-        # Check DST which changes over at around 2:00 AM
-        if local_time.tm_mday == days[TOMORROW].datetime.tm_mday:
-            should_update_dst = True
-            datetime = update_time()
-            days = [
-                SolarEphemera(datetime),
-                SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
-            ]
-            datetime = update_time()
-
-        # Check DST which changes over at around 2:00 AM
-        if local_time.tm_hour == 2 and should_update_dst:
-            get_utc_offset()
-            should_update_dst = False
-
-        next_refresh_time = time.time() + REFRESH_DELAY
-        while(time.time() < next_refresh_time):
-            watchdog.feed()
-            check_buttons()
-            time.sleep(1)
-
-        if asleep:
-            print('.', end = '')
-            check_buttons()
-            continue
-
-        # Sync WiFi time since on-board clock is inaccurate
+    if local_time.tm_mday == days[TOMORROW].datetime.tm_mday:
+        should_update_dst = True
         datetime = update_time()
-        current_time = time.time()
+        days = [
+            SolarEphemera(datetime),
+            SolarEphemera(time.localtime(time.mktime(datetime) + 86400))
+        ]
+        datetime = update_time()
 
+    if local_time.tm_hour == 2 and should_update_dst:
+        get_utc_offset()
+        should_update_dst = False
+
+    next_refresh_time = time.time() + REFRESH_DELAY
+    while(time.time() < next_refresh_time):
+        watchdog.feed()
         check_buttons()
+        local_time = time.localtime()
+        update_display(True)
+        time.sleep(0.1)
 
-        moon_frame = int((days[TODAY].moonphase / 360) * 100) % 100 # Bitmap 0 to 99
-        percent = moon_phase_angle_to_illumination_percentage(days[TODAY].moonphase)
+    # if asleep:
+    #     print('.', end = '')
+    #     check_buttons()
+    #     continue
 
-        if landscape_orientation:
-            MOON_Y = 0         # Moon at the left
-            CENTER_X = 48      # Text on the right
-            TIME_Y = 6         # Time at top right
-            DATE_Y = 16
-            EVENT_Y = 27       # Events at bottom right
-            CLOCK_GLYPH_X = 30 # Rise/set indicator
-        else:                  # Vertical orientation
-            CENTER_X = 16      # Text down center
-            CLOCK_GLYPH_X = 0  # Rise/set indicator
-            MOON_Y = 0         # Moon at the top
-            TIME_Y = 37
-            DATE_Y = 47
-            EVENT_Y = 57
-            # MOON_Y = 32      # Moon at the bottom
-            # TIME_Y = 6
-            # DATE_Y = 16
-            # EVENT_Y = 26
+    datetime = update_time()
+    current_time = time.time()
 
-        try:
-            bitmap = displayio.OnDiskBitmap(open('moon/moon{0:0>2}.bmp'.format(moon_frame), 'rb'))
-            tile_grid = displayio.TileGrid(bitmap, pixel_shader=displayio.ColorConverter())
-            tile_grid.x = 0
-            tile_grid.y = MOON_Y
-            clock_face[0] = tile_grid
-        except Exception as e: print('Error loading bitmap: {0}'.format(e))
+    check_buttons()
+    update_display()
+    check_buttons()
+    gc.collect()
 
-        check_buttons()
-
-        # Set CLOCK_MOON_PHASE first, use its size and position for painting the outlines below in elements 1-4
-        clock_face[CLOCK_MOON_PHASE].text = '100%' if percent >= 99.95 else '{:.1f}%'.format(percent + 0.05)
-        clock_face[CLOCK_MOON_PHASE].x = 16 - clock_face[CLOCK_MOON_PHASE].bounding_box[2] // 2 # Integer division
-        clock_face[CLOCK_MOON_PHASE].y = MOON_Y + 16
-        for i in range(1, 5): clock_face[i].text = clock_face[CLOCK_MOON_PHASE].text
-
-        # Paint the black outline text labels for the current moon percentage by offsetting by 1 pixel in each direction
-        clock_face[1].x, clock_face[1].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y - 1
-        clock_face[2].x, clock_face[2].y = clock_face[CLOCK_MOON_PHASE].x - 1, clock_face[CLOCK_MOON_PHASE].y
-        clock_face[3].x, clock_face[3].y = clock_face[CLOCK_MOON_PHASE].x + 1, clock_face[CLOCK_MOON_PHASE].y
-        clock_face[4].x, clock_face[4].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y + 1
-
-        if current_event == NUM_EVENTS: display_event('Sunrise today', days[TODAY].sunrise, TODAY_RISE)
-        elif current_event == 7: display_event('Sunset today', days[TODAY].sunset, TODAY_SET)
-        elif current_event == 6: display_event('Moonrise today', days[TODAY].moonrise, TODAY_RISE)
-        elif current_event == 5: display_event('Moonset today', days[TODAY].moonset, TODAY_SET)
-        elif current_event == 4: display_event('Sunrise tomorrow', days[TOMORROW].sunrise, TOMORROW_RISE)
-        elif current_event == 3: display_event('Sunset tomorrow', days[TOMORROW].sunset, TOMORROW_SET)
-        elif current_event == 2: display_event('Moonrise tomorrow', days[TOMORROW].moonrise, TOMORROW_RISE)
-        elif current_event == 1: display_event('Moonset tomorrow', days[TOMORROW].moonset, TOMORROW_SET)
-
-        # Each time through the main loop, we show a different event (in reverse order), wrapping around at the end
-        current_event = current_event - 1 if current_event > 1 else NUM_EVENTS
-
-        clock_face[CLOCK_TIME].text = hh_mm(local_time)
-        clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
-        clock_face[CLOCK_TIME].y = TIME_Y
-
-        clock_face[CLOCK_DATE].text = '{0}-{1:0>2}'.format(local_time.tm_mon, local_time.tm_mday)
-        clock_face[CLOCK_DATE].x = CENTER_X - clock_face[CLOCK_DATE].bounding_box[2] // 2
-        clock_face[CLOCK_DATE].y = DATE_Y
-
-        check_buttons()
-        display.refresh()
-        gc.collect()
-
-        print('Moon Clock: Version {1} ({2:,} RAM free) @ {0} [frame: {3}, illum %: {4:.2f}, phase°: {5}]'
-            .format(strftime(local_time), VERSION, gc.mem_free(), moon_frame, percent, days[TODAY].moonphase))
-    except Exception as e:
-        print(e)
-        log_exception_and_restart('Unexpected exception: {0}'.format(e))
+    print('Moon Clock: Version {} ({} RAM free) @ {} [frame: {}, illum %: {:.2f}], phase: {}'.format(
+        VERSION, gc.mem_free(), strftime(local_time), moon_frame, percent, phase
+    ))

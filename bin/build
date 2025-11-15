@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 SRC_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Moon Clock/src"
-LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Libraries/adafruit-circuitpython-bundle-8.x-mpy-20230704/lib"
+# LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Libraries/adafruit-circuitpython-bundle-8.x-mpy-20230704/lib"
+LIB_PATH="/Users/randy/Developer/Arduino/Matrix Portal M4/Circuit Python/Libraries/adafruit-circuitpython-bundle-10.x-mpy-20251114/lib"
 
 mkdir -p build/lib
 
@@ -16,6 +17,7 @@ for lib in \
   adafruit_minimqtt \
   adafruit_portalbase \
   adafruit_requests.mpy \
+  adafruit_ticks.mpy \
   neopixel.mpy
 do
   echo "Copying ${lib}"

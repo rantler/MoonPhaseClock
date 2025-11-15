@@ -9,14 +9,21 @@ while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
   sleep 1
 done
 echo
-echo "Erasing filesystem..."
-cp "${LIB_PATH}/Matrix_Portal_M4_Erase_Filesystem.uf2" /Volumes/MATRIXBOOT
+echo "Loading ESP32 USB Passthrough..."
+cp "${LIB_PATH}/MatrixPortal_M4_ESP32_Passthrough_TinyUSB_2023_07_30.uf2" /Volumes/MATRIXBOOT
 
 sleep 1
 while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 1 ]; do
   echo -n "."
   sleep 1
 done
+echo
+sleep 1
+
+echo "Uploading ESP32 Firmware..."
+esptool.py --port /dev/cu.usbmodem1421 --before no_reset --baud 115200 write_flash 0 "${LIB_PATH}/NINA_W102-1.7.7.bin"
+echo
+echo "ESP32 Firmware Updated!"
 echo
 echo -n "DOUBLE-CLICK RESET BUTTON..."
 echo "Press Enter when ready:"
@@ -27,9 +34,10 @@ while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
   sleep 1
 done
 echo
-echo "Copying firmware..."
+echo "Copying CircuitPython..."
 
-cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-8.2.5.uf2" /Volumes/MATRIXBOOT/
+# cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-8.2.5.uf2" /Volumes/MATRIXBOOT/
+cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-10.0.3.uf2" /Volumes/MATRIXBOOT/
 echo "Done!"
 
 echo "Restarting..."
