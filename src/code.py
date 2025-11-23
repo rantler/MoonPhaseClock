@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.8.1.4'
+VERSION = '1.8.1.5'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
@@ -79,6 +79,8 @@ longitude = None
 utc_offset = None
 esp32_wifi_sync = None
 last_update_sec = None
+brightness = 0.0
+dwell = 10
 
 ########################################################################################################################
 
@@ -204,8 +206,8 @@ def update_time():
 
 def hh_mm(time_struct):
     """
-    Return a 12-hour formatted string
-    Example: 2:35
+    Return a 12-hour formatted string with alternating colon separator
+    Example: 2:35 ... 2 35 ... 2:35 ... 2 35 ...
     """
 
     hour = (time_struct.tm_hour) % 24
@@ -217,8 +219,9 @@ def hh_mm(time_struct):
 
     # Format as 12-hour clock
     hour12 = 12 if hour % 12 == 0 else hour % 12
-    sep = ':' if time_struct.tm_sec % 2 == 0 else ' '
-    return "{0}{1}{2:02d}".format(hour12, sep, minute)
+    # Flash colon time separator
+    separator = ':' if time_struct.tm_sec % 2 == 0 else ' '
+    return "{0}{1}{2:02d}".format(hour12, separator, minute)
 
 def strftime(time_struct):
     """
@@ -272,10 +275,6 @@ def display_event(name, event, icon, event_y, glyph_x, center_x, phase_glyph):
     clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color=event_color, text=event_time_str)
     clock_face[CLOCK_EVENT].x = max(glyph_x + 6, center_x - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
     clock_face[CLOCK_EVENT].y = event_y
-
-    clock_face[CLOCK_PHASE].x = 0
-    clock_face[CLOCK_PHASE].y = 2
-    clock_face[CLOCK_PHASE].text = phase_glyph
 
 def log_exception_and_restart(e):
     """
@@ -333,7 +332,7 @@ def format_utc_offset(offset_str):
         val = abs(val)
         hours = val // 100
         minutes = val % 100
-        return "{}{:02d}:{:02d}".format(sign, hours, minutes)
+        return '{}{:02d}:{:02d}'.format(sign, hours, minutes)
 
 def fetch_url_with_retry(url, max_retries=3, delay=3):
     """
@@ -341,18 +340,18 @@ def fetch_url_with_retry(url, max_retries=3, delay=3):
     """
     attempt = 1
     while attempt <= max_retries:
-        print("[Attempt {}/{}] Fetching: {}".format(attempt, max_retries, url))
+        print('[Attempt {}/{}] Fetching: {}'.format(attempt, max_retries, url))
         try:
             data = wifi.fetch_data(url)
-            print("Success!")
+            print('Success!')
             return data
         except Exception as e:
-            print("Request failed: {}".format(e))
+            print('Request failed: {}'.format(e))
             if attempt < max_retries:
-                print("Retrying in {}s...".format(delay))
+                print('Retrying in {}s...'.format(delay))
                 time.sleep(delay)
             else:
-                print("All retries failed.")
+                print('All retries failed.')
                 return None
         attempt += 1
 
@@ -363,7 +362,7 @@ def tz_hours_from_offset(utc_offset):
     Only hours are returned; minutes are ignored.
     Valid USNO tz range: -12 <= tz <= 14
     """
-    utc_offset = utc_offset.replace(":", "")
+    utc_offset = utc_offset.replace(':', '')
     if utc_offset.startswith('-'):
         sign = -1
         digits = utc_offset[1:]
@@ -513,17 +512,44 @@ def update_display(time_only=False):
     except Exception as e:
         print("Error loading bitmap: {}".format(e))
 
+    # Update minimal set of display elements and return quickly
     if time_only:
+        global brightness, dwell
+
+        # Draw time with alternating (flashing) colon separator
         clock_face[CLOCK_TIME].text = hh_mm(local_time)
         clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
         clock_face[CLOCK_TIME].y = TIME_Y
+
+        # Draw brightening glyph for waxing, or dimming glyph for waning
+        clock_face[CLOCK_PHASE].x = 0
+        clock_face[CLOCK_PHASE].y = 2
+        clock_face[CLOCK_PHASE].text = phase_glyph
+        if phase_glyph == '+':
+            brightness = brightness + 0.1
+            if brightness >= 1.0:
+                brightness = 1.0
+                if dwell > 0: dwell = dwell - 1
+                else:
+                    brightness = 0.0
+                    dwell = 10
+        else:
+            brightness = brightness - 0.1
+            if brightness <= 0.0:
+                brightness = 0.0
+                if dwell > 0: dwell = dwell - 1
+                else:
+                    brightness = 1.0
+                    dwell = 10
+        clock_face[CLOCK_PHASE].color = color.adjust_brightness(0xBB9946, brightness)
+
         display.refresh()
         return
 
     if last_update_sec == local_time.tm_sec:
         return
 
-    clock_face[CLOCK_PERCENT].text = '100%' if percent_illum >= 99.95 else '{:.1f}%'.format(percent_illum + 0.05)
+    clock_face[CLOCK_PERCENT].text = '100%' if percent_illum >= 99 else '{:.1f}%'.format(percent_illum)
     clock_face[CLOCK_PERCENT].x = 16 - clock_face[CLOCK_PERCENT].bounding_box[2] // 2
     clock_face[CLOCK_PERCENT].y = MOON_Y + 16
     for i in range(1, 5): clock_face[i].text = clock_face[CLOCK_PERCENT].text
@@ -600,7 +626,7 @@ clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12/31', y=-99))
 clock_face.append(Label(SYMBOL_FONT, color=0x00FF00, text='x', y=-99))
 clock_face.append(Label(SMALL_FONT, color=0x00FF00, text='24:59', y=-99))
 clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12', y=-99))
-clock_face.append(Label(SMALL_FONT, color=MOON_PHASE_COLOR, text='X', y=-99))
+clock_face.append(Label(SMALL_FONT, color=MOON_PHASE_COLOR, text='+', y=-99))
 
 esp32_cs = DigitalInOut(board.ESP_CS)
 esp32_ready = DigitalInOut(board.ESP_BUSY)

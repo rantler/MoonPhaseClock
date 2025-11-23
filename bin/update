@@ -32,6 +32,7 @@ echo "Done!"
 echo -n "Copying firmware..."
 
 # cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-8.2.5.uf2" /Volumes/MATRIXBOOT/
+# Sometimes fails with "cp: target '/Volumes/MATRIXBOOT/': Permission denied"
 cp "${LIB_PATH}/adafruit-circuitpython-matrixportal_m4-en_US-10.0.3.uf2" /Volumes/MATRIXBOOT/
 echo "Done!"
 
