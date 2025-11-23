@@ -1,6 +1,6 @@
 import gc
 
-VERSION = '1.8.1.0'
+VERSION = '1.8.1.4'
 print("\nMoon Clock: Version {0} ({1:,} RAM free)".format(VERSION, gc.mem_free()))
 
 import json
@@ -47,21 +47,22 @@ TOMORROW_RISE = '\u219F'# ↟
 TOMORROW_SET = '\u21A1' # ↡
 
 COLOR_BRIGHTNESS = 0.5
-MOON_EVENT_COLOR = color.adjust_brightness(0xB8BFC9, COLOR_BRIGHTNESS) # (grey blue)
-MOON_PHASE_COLOR = color.adjust_brightness(0x9B24F9, COLOR_BRIGHTNESS) # (purple)
-SUN_EVENT_COLOR = color.adjust_brightness(0xFBDE2C, COLOR_BRIGHTNESS) # (sun yellow)
+MOON_PHEN_COLOR = color.adjust_brightness(0xB8BFC9, COLOR_BRIGHTNESS) # (grey blue)
+PERCENT_COLOR = color.adjust_brightness(0x9B24F9, COLOR_BRIGHTNESS) # (purple)
+SUN_PHEN_COLOR = color.adjust_brightness(0xFBDE2C, COLOR_BRIGHTNESS) # (sun yellow)
 TIME_COLOR = color.adjust_brightness(0xA00000, COLOR_BRIGHTNESS) # (red)
 DATE_COLOR = color.adjust_brightness(0x46BBDF, COLOR_BRIGHTNESS) # (aqua)
+MOON_PHASE_COLOR = color.adjust_brightness(0xBB9946, COLOR_BRIGHTNESS)
 
 LARGE_FONT = bitmap_font.load_font('/fonts/helvB12.bdf')
 SMALL_FONT = bitmap_font.load_font('/fonts/helvR10.bdf')
 SYMBOL_FONT = bitmap_font.load_font('/fonts/6x10.bdf')
 LARGE_FONT.load_glyphs('0123456789:')
-SMALL_FONT.load_glyphs('0123456789:/.%')
+SMALL_FONT.load_glyphs('0123456789:/.%-+')
 SYMBOL_FONT.load_glyphs('\u2191\u2193\u219F\u21A1') # ↑ ↓ ↟ ↡
 
 # NOTE! These values correspond to the _order_ of the clock_face.append() calls below. See comments there
-CLOCK_MOON_PHASE = 5
+CLOCK_PERCENT = 5
 CLOCK_TIME = 6
 CLOCK_DATE = 7
 # Element 8 is a symbol indicating next rise or set - Color is overridden by event colors
@@ -69,6 +70,7 @@ CLOCK_GLYPH = 8
 # Element 9 is the time of (or time to) next rise/set event - Color is overridden by event colors
 CLOCK_EVENT = 9
 CLOCK_DATE = 10
+CLOCK_PHASE = 11
 
 current_event = NUM_EVENTS
 asleep = False
@@ -79,10 +81,6 @@ esp32_wifi_sync = None
 last_update_sec = None
 
 ########################################################################################################################
-
-# From "Astronomical Algorithms" by Jean Meeus, section 48
-def moon_phase_angle_to_illumination_percentage(phase_angle):
-    return ((1 - math.cos(math.radians(phase_angle))) / 2 ) * 100
 
 def parse_utc_offset(offset_str):
     """
@@ -100,15 +98,18 @@ def parse_utc_offset(offset_str):
 
 def get_timestamp_from_esp32_wifi():
     global esp32_wifi_sync
+
     retries = 100
     esp_time = None
     if esp32_wifi_sync is None:
-        print('Syncing WiFi with ESP32.', end='')
+        print('Syncing WiFi with ESP32...', end='')
     while retries > 0 and not esp_time:
         try:
             esp_time = esp.get_time() # In UTC
             if not esp_time:
-                raise Exception("No time returned")
+                raise Exception('No time returned')
+            else:
+                if esp32_wifi_sync is None: print()
         except Exception:
             print('.', end='')
             time.sleep(1)
@@ -119,7 +120,7 @@ def get_timestamp_from_esp32_wifi():
         adjusted = esp_time[0] + (int(utc_offset) // 100) * 3600
         return time.localtime(adjusted)
     else:
-        print(' FAILED!')
+        print('Failed to Sync WiFi with ESP32!')
         return None
 
 def forced_asleep(): return nvm[0] == 1
@@ -237,7 +238,7 @@ def strftime(time_struct):
         utc_offset
     )
 
-def display_event(name, event, icon, event_y, glyph_x, center_x):
+def display_event(name, event, icon, event_y, glyph_x, center_x, phase_glyph):
     """
     Display a sun/moon event on the clock.
     event_y: vertical position of the event
@@ -248,12 +249,12 @@ def display_event(name, event, icon, event_y, glyph_x, center_x):
         time_struct = time.localtime(event)
 
     if name.startswith('Sun'):
-        event_color = SUN_EVENT_COLOR
+        event_color = SUN_PHEN_COLOR
         if event is not None:
             hour = 12 if time_struct.tm_hour == 0 else time_struct.tm_hour
             event_time_str = '{0}:{1:0>2}'.format(hour, time_struct.tm_min)
     else:
-        event_color = MOON_EVENT_COLOR
+        event_color = MOON_PHEN_COLOR
         if event is not None:
             event_time_str = '{0}:{1:0>2}'.format(time_struct.tm_hour, time_struct.tm_min)
 
@@ -271,6 +272,10 @@ def display_event(name, event, icon, event_y, glyph_x, center_x):
     clock_face[CLOCK_EVENT] = Label(SMALL_FONT, color=event_color, text=event_time_str)
     clock_face[CLOCK_EVENT].x = max(glyph_x + 6, center_x - clock_face[CLOCK_EVENT].bounding_box[2] // 2)
     clock_face[CLOCK_EVENT].y = event_y
+
+    clock_face[CLOCK_PHASE].x = 0
+    clock_face[CLOCK_PHASE].y = 2
+    clock_face[CLOCK_PHASE].text = phase_glyph
 
 def log_exception_and_restart(e):
     """
@@ -382,25 +387,24 @@ def tz_hours_from_offset(utc_offset):
 ########################################################################################################################
 
 class SolarEphemera:
-    global latitude, longitude, utc_offset, phase
+    global latitude, longitude, utc_offset, moon_phase
 
     def __init__(self, datetime):
         self.sunrise = None
         self.sunset = None
         self.moonrise = None
         self.moonset = None
-        self.moonphase = None
+        self.percent = None
         self.datetime = datetime
-        self.current_phase = "Unknown"
+        self.phase = None
 
         date_str = "{:04d}-{:02d}-{:02d}".format(datetime.tm_year, datetime.tm_mon, datetime.tm_mday)
-        tz_hours = tz_hours_from_offset(utc_offset)
         url = "https://aa.usno.navy.mil/api/rstt/oneday?date={}&coords={},{}&tz={}".format(
-            date_str, latitude, longitude, tz_hours
+            date_str, latitude, longitude, tz_hours_from_offset(utc_offset)
         )
 
         # Interesting fields: isdst, curphase
-        print("Fetching daily sun & moon data via USNO AA: {}".format(url))
+        print("Fetching daily sun & moon data via USNO AA for {}".format(date_str))
         data_str = fetch_url_with_retry(url, max_retries=3, delay=3)
         if data_str is None:
             print("Failed to fetch USNO data. Leaving ephemera empty.")
@@ -413,17 +417,15 @@ class SolarEphemera:
             print("Failed to parse USNO response: {}".format(e))
             return
 
-        phase = data.get('curphase', '')
-        print("phase = {0}".format(phase))
-        self.current_phase = phase
+        # "Waxing Crescent", "Waxing Gibbous", "Waning Crescent", "Waning Gibbous", "New Moon", "Full Moon"
+        self.phase = data.get('curphase', '')
         daylight_saving_time = data.get('isdst', False)
 
         try:
-            fracillum = data.get('fracillum', "0%").strip('%')
-            self.moonphase = float(fracillum)
+            self.percent = float(data.get('fracillum', "0%").strip('%'))
         except Exception as e:
-            print("Failed to parse moon phase: {}".format(e))
-            self.moonphase = 0.0
+            print("Failed to parse fracillum: {}".format(e))
+            self.percent = 100 # Default to full moon
 
         try:
             for item in data.get('sundata', []):
@@ -465,17 +467,27 @@ class SolarEphemera:
 ########################################################################################################################
 
 def update_display(time_only=False):
-    global moon_frame, percent, days, current_event, last_update_sec, phase
+    global moon_frame, percent_illum, days, current_event, last_update_sec, moon_phase
 
-    percent = days[TODAY].moonphase
-    phase = days[TODAY].current_phase
-
-    if phase != None:
-        phase_offset = 100 if "Waning" in phase else 50
-    else:
-        phase_offset = 100
-
-    moon_frame = phase_offset - int(days[TODAY].moonphase)
+    # moon_frame = 90 if waning crescent and percent = 10
+    # moon_frame = 10 if waxing crescent and percent = 10
+    # moon_frame == 50 if full moon and percent >= 100.0
+    # moon_frame == 99 if new moon and percent <= 0.0
+    percent_illum = int(days[TODAY].percent)
+    moon_phase = days[TODAY].phase
+    if moon_phase != None:
+        if "Waning" in moon_phase:
+            phase_glyph = '-'
+            moon_frame = 100 - percent_illum // 2
+        if "Waxing" in moon_phase:
+            phase_glyph = '+'
+            moon_frame = percent_illum // 2
+        if "New Moon" in moon_phase:
+            phase_glyph = ''
+            moon_frame = 99
+        if "Full Moon" in moon_phase:
+            phase_glyph = ''
+            moon_frame = 50
 
     if landscape_orientation:
         MOON_Y = 0
@@ -511,16 +523,15 @@ def update_display(time_only=False):
     if last_update_sec == local_time.tm_sec:
         return
 
-    clock_face[CLOCK_MOON_PHASE].text = '100%' if percent >= 99.95 else '{:.1f}%'.format(percent + 0.05)
-    clock_face[CLOCK_MOON_PHASE].x = 16 - clock_face[CLOCK_MOON_PHASE].bounding_box[2] // 2
-    clock_face[CLOCK_MOON_PHASE].y = MOON_Y + 16
-    for i in range(1, 5):
-        clock_face[i].text = clock_face[CLOCK_MOON_PHASE].text
+    clock_face[CLOCK_PERCENT].text = '100%' if percent_illum >= 99.95 else '{:.1f}%'.format(percent_illum + 0.05)
+    clock_face[CLOCK_PERCENT].x = 16 - clock_face[CLOCK_PERCENT].bounding_box[2] // 2
+    clock_face[CLOCK_PERCENT].y = MOON_Y + 16
+    for i in range(1, 5): clock_face[i].text = clock_face[CLOCK_PERCENT].text
 
-    clock_face[1].x, clock_face[1].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y - 1
-    clock_face[2].x, clock_face[2].y = clock_face[CLOCK_MOON_PHASE].x - 1, clock_face[CLOCK_MOON_PHASE].y
-    clock_face[3].x, clock_face[3].y = clock_face[CLOCK_MOON_PHASE].x + 1, clock_face[CLOCK_MOON_PHASE].y
-    clock_face[4].x, clock_face[4].y = clock_face[CLOCK_MOON_PHASE].x, clock_face[CLOCK_MOON_PHASE].y + 1
+    clock_face[1].x, clock_face[1].y = clock_face[CLOCK_PERCENT].x, clock_face[CLOCK_PERCENT].y - 1
+    clock_face[2].x, clock_face[2].y = clock_face[CLOCK_PERCENT].x - 1, clock_face[CLOCK_PERCENT].y
+    clock_face[3].x, clock_face[3].y = clock_face[CLOCK_PERCENT].x + 1, clock_face[CLOCK_PERCENT].y
+    clock_face[4].x, clock_face[4].y = clock_face[CLOCK_PERCENT].x, clock_face[CLOCK_PERCENT].y + 1
 
     event_map = [
         ('Moonset tomorrow', days[TOMORROW].moonset, TOMORROW_SET),
@@ -534,7 +545,7 @@ def update_display(time_only=False):
     ]
 
     event_name, event_time, icon = event_map[(NUM_EVENTS - current_event) % NUM_EVENTS]
-    display_event(event_name, event_time, icon, EVENT_Y, CLOCK_GLYPH_X, CENTER_X)
+    display_event(event_name, event_time, icon, EVENT_Y, CLOCK_GLYPH_X, CENTER_X, phase_glyph)
 
     clock_face[CLOCK_TIME].text = hh_mm(local_time)
     clock_face[CLOCK_TIME].x = CENTER_X - clock_face[CLOCK_TIME].bounding_box[2] // 2
@@ -583,12 +594,13 @@ display.root_group = clock_face
 display.refresh()
 
 for i in range(4): clock_face.append(Label(SMALL_FONT, color=0, text='99.9%', y=-99))
-clock_face.append(Label(SMALL_FONT, color=MOON_PHASE_COLOR, text='99.9%', y=-99))
+clock_face.append(Label(SMALL_FONT, color=PERCENT_COLOR, text='99.9%', y=-99))
 clock_face.append(Label(LARGE_FONT, color=TIME_COLOR, text='24:59', y=-99))
 clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12/31', y=-99))
 clock_face.append(Label(SYMBOL_FONT, color=0x00FF00, text='x', y=-99))
 clock_face.append(Label(SMALL_FONT, color=0x00FF00, text='24:59', y=-99))
 clock_face.append(Label(SMALL_FONT, color=DATE_COLOR, text='12', y=-99))
+clock_face.append(Label(SMALL_FONT, color=MOON_PHASE_COLOR, text='X', y=-99))
 
 esp32_cs = DigitalInOut(board.ESP_CS)
 esp32_ready = DigitalInOut(board.ESP_BUSY)
@@ -601,10 +613,7 @@ wifi.connect()
 get_utc_offset()
 get_lat_long()
 
-print("Setting initial clock time. UTC offset is {}".format(utc_offset))
 datetime = update_time()
-print('today = %{0}'.format(datetime))
-print("tomorrow = %{0}".format(time.localtime(time.mktime(datetime) + 86400)))
 
 days = [
     SolarEphemera(datetime),
@@ -659,6 +668,6 @@ while True:
     check_buttons()
     gc.collect()
 
-    print('Moon Clock: Version {} ({} RAM free) @ {} [frame: {}, illum %: {:.2f}], phase: {}'.format(
-        VERSION, gc.mem_free(), strftime(local_time), moon_frame, percent, phase
+    print('Moon Clock: Version {} ({:,} RAM free) @ {} moon_frame: {}, percent_illum: {:.2f}, moon_phase: {}'.format(
+        VERSION, gc.mem_free(), strftime(local_time), moon_frame, percent_illum, moon_phase
     ))

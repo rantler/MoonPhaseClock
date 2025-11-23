@@ -7,11 +7,12 @@ if [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; then
 fi
 # echo "Press Enter when ready:"
 # read
+
 while [ `dir /Volumes/|grep MATRIXBOOT|wc -l` == 0 ]; do
   echo -n "."
   sleep 1
 done
-echo "Done!"
+echo
 echo -n "Erasing filesystem..."
 cp "${LIB_PATH}/Matrix_Portal_M4_Erase_Filesystem.uf2" /Volumes/MATRIXBOOT
 
